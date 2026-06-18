@@ -55,7 +55,12 @@ VERIFY_PROMPT = (
     "Если кандидат нарушает порог (нужно не менее 16, а у него 8) — это conflict, а не совпадение.\n"
     "3) matched_specs — только то, что реально подтверждается текстом кандидата. Не уверен — не пиши.\n"
     "4) Если ни один кандидат не подходит — status: NOT_FOUND.\n"
-    "5) source_url и source_site бери у выбранного кандидата.\n\n"
+    "5) source_url и source_site бери у выбранного кандидата.\n"
+    "6) Если ссылка кандидата ведёт на КАТЕГОРИЮ, поиск или список товаров "
+    "(например .../catalog/tags/..., .../search..., .../category...), а не на конкретную "
+    "карточку товара — это НЕ найденный товар, не выбирай его.\n"
+    "7) confidence обязан соответствовать статусу: FOUND_EXACT = 70-100, "
+    "FOUND_PARTIAL = 40-69, NOT_FOUND = 0-30. НЕ ставь 0 при FOUND_EXACT или FOUND_PARTIAL.\n\n"
     "ТОЛЬКО JSON, без markdown и без текста вокруг:\n"
     "{\n"
     '  "status": "FOUND_EXACT / FOUND_PARTIAL / NOT_FOUND",\n'
@@ -134,6 +139,31 @@ def ddgs_search(queries):
             seen.add(r["url"])
             unique.append(r)
     return unique
+
+
+LISTING_MARKERS = ("/catalog/tags", "/search", "/category", "/categories", "/promo", "/brands/", "?search", "/tags/", "/cat/")
+PRODUCT_MARKERS = ("/shop/p/", "/product/", "/item/", "/goods/", "/detail", "/p/")
+
+
+def rank_candidates(candidates, queries):
+    """Сортирует кандидатов: больше совпавших слов запроса = выше; карточки товара выше списков."""
+    qwords = set()
+    for q in queries:
+        for w in q.lower().split():
+            if len(w) >= 3:
+                qwords.add(w)
+
+    def score(c):
+        text = f"{c.get('title', '')} {c.get('snippet', '')}".lower()
+        s = sum(1 for w in qwords if w in text)
+        url = (c.get("url") or "").lower()
+        if any(m in url for m in LISTING_MARKERS):
+            s -= 5
+        if any(m in url for m in PRODUCT_MARKERS):
+            s += 2
+        return s
+
+    return sorted(candidates, key=score, reverse=True)
 
 
 def verify(client, anketa, candidates):
@@ -246,6 +276,8 @@ async def main():
             candidates = await asyncio.to_thread(ddgs_search, queries)
         except Exception as e:
             candidates = []
+
+        candidates = rank_candidates(candidates, queries)
 
         if not candidates:
             result = {"status": "NOT_FOUND", "reason": "поиск не дал кандидатов", "confidence": 0}
