@@ -60,13 +60,17 @@ VERIFY_PROMPT = (
     "(например .../catalog/tags/..., .../search..., .../category...), а не на конкретную "
     "карточку товара — это НЕ найденный товар, не выбирай его.\n"
     "7) confidence обязан соответствовать статусу: FOUND_EXACT = 70-100, "
-    "FOUND_PARTIAL = 40-69, NOT_FOUND = 0-30. НЕ ставь 0 при FOUND_EXACT или FOUND_PARTIAL.\n\n"
+    "FOUND_PARTIAL = 40-69, NOT_FOUND = 0-30. НЕ ставь 0 при FOUND_EXACT или FOUND_PARTIAL.\n"
+    "8) price: если в title или snippet выбранного кандидата ЯВНО видна цена — верни её "
+    "целым числом без пробелов, точек и символов валюты (например 355000). "
+    "Если цены не видно — null. ЦЕНУ НЕ ВЫДУМЫВАЙ.\n\n"
     "ТОЛЬКО JSON, без markdown и без текста вокруг:\n"
     "{\n"
     '  "status": "FOUND_EXACT / FOUND_PARTIAL / NOT_FOUND",\n'
     '  "brand": "бренд или null",\n'
     '  "model": "модель или null",\n'
     '  "product_name": "название найденного товара",\n'
+    '  "price": число или null,\n'
     '  "source_url": "ссылка кандидата",\n'
     '  "source_site": "kaspi.kz / ozon.ru / ...",\n'
     '  "matched_specs": ["..."],\n'
