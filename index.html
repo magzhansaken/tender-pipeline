@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Подобранные лоты — госзакупки</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --surface:#ffffff; --surface-2:#fafbfc;
+    --line:#e6e8ec; --line-2:#d4d8df;
+    --ink:#10141d; --muted:#5b6472; --faint:#969eaa;
+    --accent:#0e7c6b; --accent-ink:#0a584c;
+    --ok:#157347; --ok-bg:#e9f5ee;
+    --warn:#a85b08; --warn-bg:#fbf1e3;
+    --bad:#b23128; --bad-bg:#fbeceb;
+    --neutral:#48515f; --neutral-bg:#eceff3;
+    --radius:12px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1116; --surface:#161b22; --surface-2:#1a2029;
+      --line:#262d38; --line-2:#333c49;
+      --ink:#e7eaef; --muted:#9aa4b2; --faint:#6b7585;
+      --accent:#34b3a0; --accent-ink:#7fd6c8;
+      --ok:#4ec07e; --ok-bg:#13241b;
+      --warn:#e0a64a; --warn-bg:#2a2012;
+      --bad:#e57368; --bad-bg:#2a1614;
+      --neutral:#aab2bf; --neutral-bg:#1d242e;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:28px 20px 80px}
+
+  /* header */
+  header h1{font-size:24px; font-weight:650; letter-spacing:-.02em; margin:0}
+  header p{margin:4px 0 0; color:var(--muted); font-size:14px}
+  .stats{display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 0}
+  .stat{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:8px 12px; display:flex; align-items:baseline; gap:7px;
+  }
+  .stat b{font-family:var(--mono); font-size:18px; font-weight:600; font-variant-numeric:tabular-nums}
+  .stat span{font-size:12.5px; color:var(--muted)}
+  .stat.ok b{color:var(--ok)} .stat.warn b{color:var(--warn)}
+  .stat.bad b{color:var(--bad)} .stat.neutral b{color:var(--neutral)}
+
+  /* controls */
+  .bar{
+    position:sticky; top:0; z-index:5; margin:20px 0 16px;
+    background:var(--bg); padding:10px 0;
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+  }
+  .search{flex:1 1 240px; position:relative}
+  .search input{
+    width:100%; padding:10px 12px 10px 36px; font:inherit; color:var(--ink);
+    background:var(--surface); border:1px solid var(--line-2); border-radius:10px;
+  }
+  .search svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--faint)}
+  .search input:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
+  select{
+    font:inherit; color:var(--ink); background:var(--surface);
+    border:1px solid var(--line-2); border-radius:10px; padding:10px 12px;
+  }
+  .pills{display:flex; gap:4px; background:var(--surface); border:1px solid var(--line-2);
+    border-radius:10px; padding:3px}
+  .pill{
+    border:0; background:transparent; font:inherit; font-size:13.5px; color:var(--muted);
+    padding:6px 11px; border-radius:8px; cursor:pointer; white-space:nowrap;
+  }
+  .pill[aria-pressed="true"]{background:var(--ink); color:var(--surface)}
+
+  /* list */
+  .meta{color:var(--muted); font-size:13px; margin:0 2px 10px}
+  .card{
+    display:grid; grid-template-columns:4px 1fr; gap:0;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    margin-bottom:10px; overflow:hidden;
+  }
+  .stripe{background:var(--line-2)}
+  .card.ok .stripe{background:var(--ok)} .card.warn .stripe{background:var(--warn)}
+  .card.bad .stripe{background:var(--bad)} .card.neutral .stripe{background:var(--neutral)}
+  .body{padding:15px 17px}
+  .top{display:flex; justify-content:space-between; align-items:flex-start; gap:14px}
+  .eyebrow{font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); margin:0 0 3px}
+  .name{font-size:16.5px; font-weight:600; margin:0; letter-spacing:-.01em}
+  .badge{
+    flex:none; font-size:12px; font-weight:550; padding:4px 9px; border-radius:999px; white-space:nowrap;
+  }
+  .badge.ok{background:var(--ok-bg); color:var(--ok)}
+  .badge.warn{background:var(--warn-bg); color:var(--warn)}
+  .badge.bad{background:var(--bad-bg); color:var(--bad)}
+  .badge.neutral{background:var(--neutral-bg); color:var(--neutral)}
+
+  .found{margin:11px 0 0; font-size:14.5px}
+  .found .bm{font-weight:600}
+  .found a{color:var(--accent-ink); text-decoration:none}
+  .found a:hover{text-decoration:underline}
+  .none{color:var(--muted); font-style:italic}
+  .site{
+    display:inline-block; margin-left:7px; font-family:var(--mono); font-size:11.5px;
+    color:var(--muted); background:var(--surface-2); border:1px solid var(--line);
+    padding:1px 6px; border-radius:6px; vertical-align:1px;
+  }
+
+  .row2{display:flex; flex-wrap:wrap; align-items:center; gap:16px 20px; margin:13px 0 0}
+  .conf{display:flex; align-items:center; gap:9px; min-width:190px}
+  .conf .track{flex:1; height:6px; background:var(--line); border-radius:3px; overflow:hidden}
+  .conf .fill{height:100%; border-radius:3px}
+  .card.ok .fill{background:var(--ok)} .card.warn .fill{background:var(--warn)}
+  .card.bad .fill{background:var(--bad)} .card.neutral .fill{background:var(--neutral)}
+  .conf .pct{font-family:var(--mono); font-size:13px; font-variant-numeric:tabular-nums; min-width:38px; text-align:right}
+  .conf .lbl{font-size:12px; color:var(--faint)}
+  .price{font-size:13.5px; color:var(--muted)}
+  .price b{font-family:var(--mono); color:var(--ink); font-variant-numeric:tabular-nums}
+  .price .pos{color:var(--ok)} .price .neg{color:var(--bad)}
+  .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
+
+  details{margin:12px 0 0}
+  details summary{cursor:pointer; color:var(--muted); font-size:13px; list-style:none; width:fit-content}
+  details summary::-webkit-details-marker{display:none}
+  details summary::before{content:"› "; color:var(--faint)}
+  details[open] summary::before{content:"⌄ "}
+  .detail{margin:9px 0 0; padding:12px 14px; background:var(--surface-2); border:1px solid var(--line); border-radius:9px}
+  .detail .reason{font-size:13.5px; color:var(--ink); margin:0 0 9px}
+  .chips{display:flex; flex-wrap:wrap; gap:5px}
+  .chip{font-size:12px; padding:3px 8px; border-radius:7px; font-family:var(--mono)}
+  .chip.m{background:var(--ok-bg); color:var(--ok)}
+  .chip.x{background:var(--bad-bg); color:var(--bad)}
+  .chip.c{background:var(--warn-bg); color:var(--warn)}
+  .chips + .chips{margin-top:6px}
+
+  .state{text-align:center; padding:60px 20px; color:var(--muted)}
+  .pager{display:flex; justify-content:center; align-items:center; gap:14px; margin:22px 0 0}
+  .pager button{
+    font:inherit; padding:8px 16px; border-radius:9px; cursor:pointer;
+    background:var(--surface); border:1px solid var(--line-2); color:var(--ink);
+  }
+  .pager button:disabled{opacity:.4; cursor:default}
+
+  @media (max-width:560px){
+    .cand{margin-left:0}
+    .top{flex-direction:column-reverse; align-items:flex-start}
+    .badge{align-self:flex-start}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Подобранные лоты</h1>
+    <p>Обработано автоматически из госзакупок · обновляется ежедневно</p>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="bar">
+    <label class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="Поиск: наименование, бренд, модель…" autocomplete="off">
+    </label>
+    <div class="pills" id="statusPills" role="group" aria-label="Фильтр по статусу">
+      <button class="pill" data-status="" aria-pressed="true">Все</button>
+      <button class="pill" data-status="FOUND_EXACT" aria-pressed="false">Точные</button>
+      <button class="pill" data-status="FOUND_PARTIAL" aria-pressed="false">Частичные</button>
+      <button class="pill" data-status="NOT_FOUND" aria-pressed="false">Не найдено</button>
+    </div>
+    <select id="category"><option value="">Все категории</option></select>
+    <select id="sort">
+      <option value="confidence">По уверенности</option>
+      <option value="recent">Сначала новые</option>
+      <option value="name">По названию</option>
+      <option value="margin">По марже</option>
+    </select>
+  </div>
+
+  <p class="meta" id="meta"></p>
+  <div id="list"></div>
+  <div class="pager" id="pager" hidden>
+    <button id="prev">← Назад</button>
+    <span id="pageInfo" style="font-size:13px;color:var(--muted)"></span>
+    <button id="next">Вперёд →</button>
+  </div>
+</div>
+
+<script>
+const ST = {
+  FOUND_EXACT:    {label:"Точное совпадение", cls:"ok"},
+  FOUND_PARTIAL:  {label:"Частичное",         cls:"warn"},
+  NOT_FOUND:      {label:"Не найдено",        cls:"bad"},
+  NO_BRAND_NEEDED:{label:"Без бренда",        cls:"neutral"},
+  ERROR:          {label:"Ошибка",            cls:"bad"},
+};
+const state = {q:"", status:"", category:"", sort:"confidence", offset:0, limit:25};
+const $ = s => document.querySelector(s);
+const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = n => new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₸";
+
+async function loadStats(){
+  try{
+    const s = await (await fetch("/api/stats")).json();
+    const b = s.by_status || {};
+    const cell = (n,label,cls="") => n ? `<div class="stat ${cls}"><b>${n}</b><span>${label}</span></div>` : "";
+    $("#stats").innerHTML =
+      cell(s.total,"всего") +
+      cell(b.FOUND_EXACT,"точных","ok") +
+      cell(b.FOUND_PARTIAL,"частичных","warn") +
+      cell(b.NOT_FOUND,"не найдено","bad") +
+      (s.avg_confidence!=null ? `<div class="stat"><b>${s.avg_confidence}%</b><span>ср. уверенность</span></div>` : "");
+    const sel = $("#category");
+    for(const c of (s.categories||[])){
+      const o = document.createElement("option"); o.value = c; o.textContent = c; sel.append(o);
+    }
+  }catch(e){ /* статистика не критична */ }
+}
+
+function specChips(arr, cls){
+  if(!arr || !arr.length) return "";
+  return `<div class="chips">${arr.slice(0,12).map(x=>`<span class="chip ${cls}">${esc(x)}</span>`).join("")}</div>`;
+}
+
+function priceBlock(it){
+  if(it.margin==null && it.margin_pct==null && it.lot_price==null) return "";
+  let s = "";
+  if(it.lot_price!=null) s += `Лот <b>${money(it.lot_price)}</b> `;
+  if(it.purchase_price!=null) s += `· закуп <b>${money(it.purchase_price)}</b> `;
+  if(it.margin!=null){
+    const cls = it.margin>=0 ? "pos":"neg";
+    const qty = it.quantity||0;
+    if(qty>1 && it.margin_total!=null){
+      s += `· маржа <b class="${cls}">${money(it.margin)}/шт`;
+      if(it.margin_pct!=null) s += ` (${Math.round(it.margin_pct)}%)`;
+      s += `</b> · итого <b class="${cls}">${money(it.margin_total)}</b> <span style="color:var(--faint)">за ${qty} шт</span>`;
+    }else{
+      s += `· маржа <b class="${cls}">${money(it.margin)}`;
+      if(it.margin_pct!=null) s += ` (${Math.round(it.margin_pct)}%)`;
+      s += `</b>`;
+    }
+  }
+  return `<div class="price">${s}</div>`;
+}
+
+function card(it){
+  const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
+  const conf = it.confidence||0;
+  // блок «что нашли»
+  let found;
+  if(it.found_product || it.found_brand){
+    const bm = [it.found_brand, it.found_model].filter(Boolean).join(" ");
+    const prod = it.found_product || bm;
+    const inner = it.source_url
+      ? `<a href="${esc(it.source_url)}" target="_blank" rel="noopener">${esc(prod)}</a>`
+      : esc(prod);
+    const site = it.source_site ? `<span class="site">${esc(it.source_site)}</span>` : "";
+    found = `<div class="found">${bm?`<span class="bm">${esc(bm)}</span> — `:""}${inner}${site}</div>`;
+  }else{
+    found = `<div class="found none">Подходящий товар не найден</div>`;
+  }
+  const cand = it.candidates_found ? `<span class="cand">${it.candidates_found} кандидатов</span>` : "";
+  const detailBits = [
+    it.reason ? `<p class="reason">${esc(it.reason)}</p>` : "",
+    specChips(it.matched_specs,"m"),
+    specChips(it.missing_specs,"x"),
+    specChips(it.conflicts,"c"),
+  ].join("");
+  const details = detailBits.trim()
+    ? `<details><summary>Подробнее о сверке</summary><div class="detail">${detailBits}</div></details>` : "";
+
+  return `<article class="card ${st.cls}">
+    <div class="stripe"></div>
+    <div class="body">
+      <div class="top">
+        <div>
+          <p class="eyebrow">${esc(it.category||"без категории")}</p>
+          <h2 class="name">${esc(it.name||"—")}</h2>
+        </div>
+        <span class="badge ${st.cls}">${esc(st.label)}</span>
+      </div>
+      ${found}
+      <div class="row2">
+        <div class="conf">
+          <span class="lbl">уверенность</span>
+          <div class="track"><div class="fill" style="width:${conf}%"></div></div>
+          <span class="pct">${conf}%</span>
+        </div>
+        ${priceBlock(it)}
+        ${cand}
+      </div>
+      ${details}
+    </div>
+  </article>`;
+}
+
+let reqId = 0;
+async function load(){
+  const mine = ++reqId;
+  $("#list").innerHTML = `<div class="state">Загрузка…</div>`;
+  const p = new URLSearchParams();
+  if(state.q) p.set("q", state.q);
+  if(state.status) p.set("status", state.status);
+  if(state.category) p.set("category", state.category);
+  p.set("sort", state.sort);
+  p.set("limit", state.limit);
+  p.set("offset", state.offset);
+  let data;
+  try{
+    data = await (await fetch("/api/lots?"+p)).json();
+  }catch(e){
+    if(mine!==reqId) return;
+    $("#list").innerHTML = `<div class="state">Не удалось загрузить лоты. Обновите страницу.</div>`;
+    return;
+  }
+  if(mine!==reqId) return; // пришёл устаревший ответ
+  const {items, total, offset, limit} = data;
+  if(!items.length){
+    $("#meta").textContent = "";
+    $("#list").innerHTML = `<div class="state">Ничего не нашлось. Измените запрос или фильтры.</div>`;
+    $("#pager").hidden = true;
+    return;
+  }
+  $("#meta").textContent = `Показано ${offset+1}–${offset+items.length} из ${total}`;
+  $("#list").innerHTML = items.map(card).join("");
+  // пагинация
+  $("#pager").hidden = total <= limit;
+  $("#prev").disabled = offset === 0;
+  $("#next").disabled = offset + limit >= total;
+  $("#pageInfo").textContent = `стр. ${Math.floor(offset/limit)+1} из ${Math.ceil(total/limit)}`;
+}
+
+// события
+let t;
+$("#q").addEventListener("input", e => {
+  clearTimeout(t);
+  t = setTimeout(() => { state.q = e.target.value; state.offset = 0; load(); }, 280);
+});
+$("#statusPills").addEventListener("click", e => {
+  const b = e.target.closest(".pill"); if(!b) return;
+  for(const x of $("#statusPills").children) x.setAttribute("aria-pressed","false");
+  b.setAttribute("aria-pressed","true");
+  state.status = b.dataset.status; state.offset = 0; load();
+});
+$("#category").addEventListener("change", e => { state.category = e.target.value; state.offset = 0; load(); });
+$("#sort").addEventListener("change", e => { state.sort = e.target.value; state.offset = 0; load(); });
+$("#prev").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); load(); window.scrollTo(0,0); });
+$("#next").addEventListener("click", () => { state.offset += state.limit; load(); window.scrollTo(0,0); });
+
+loadStats();
+load();
+</script>
+</body>
+</html>

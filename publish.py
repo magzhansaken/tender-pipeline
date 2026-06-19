@@ -101,7 +101,7 @@ def to_int(val):
 
 
 SELECT_SQL = """
-SELECT id, name, match_status, structured_spec, match_result,
+SELECT id, lot_number, name, match_status, structured_spec, match_result,
        found_url, confidence, price_per_unit, customer, quantity, unit
 FROM tenders
 WHERE match_status IN ('FOUND_EXACT', 'FOUND_PARTIAL')
@@ -116,20 +116,27 @@ INSERT INTO lots (
     found_brand, found_model, found_product, source_url, source_site,
     matched_specs, missing_specs, conflicts, confidence, reason,
     lot_price, purchase_price, margin, margin_pct,
-    customer, quantity, unit, updated_at
+    customer, quantity, unit, announce_id, margin_total, updated_at
 ) VALUES (
     $1, $2, $3, $4,
     $5, $6,
     $7, $8, $9, $10, $11,
     $12::jsonb, $13::jsonb, $14::jsonb, $15, $16,
     $17, $18, $19, $20,
-    $21, $22, $23, now()
+    $21, $22, $23, $24, $25, now()
 )
 """
 
 
 async def main():
     conn = await asyncpg.connect(DATABASE_URL)
+
+    # новые колонки витрины (создаём, если их ещё нет)
+    await conn.execute(
+        "ALTER TABLE lots ADD COLUMN IF NOT EXISTS announce_id text;"
+        "ALTER TABLE lots ADD COLUMN IF NOT EXISTS margin_total numeric;"
+    )
+
     rows = await conn.fetch(SELECT_SQL)
 
     records = []
@@ -146,6 +153,10 @@ async def main():
             lot_price = None
 
         purchase = to_kzt(parse_price(mr.get("price")), site)
+        qty = to_int(r["quantity"])
+
+        ln = r["lot_number"] or ""
+        announce_id = ln.split("-")[0] if ln else None
 
         margin = None
         margin_pct = None
@@ -153,6 +164,8 @@ async def main():
             margin = round(lot_price - purchase, 2)
             margin_pct = round((lot_price - purchase) / lot_price * 100.0, 1)
             with_margin += 1
+
+        margin_total = round(margin * qty, 2) if (margin is not None and qty) else None
 
         records.append((
             r["id"],
@@ -176,8 +189,10 @@ async def main():
             margin,
             margin_pct,
             r["customer"],
-            to_int(r["quantity"]),
+            qty,
             r["unit"],
+            announce_id,
+            margin_total,
         ))
 
     async with conn.transaction():
