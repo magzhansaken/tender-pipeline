@@ -32,6 +32,13 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncpg
 from ollama import Client
 
+# Гибрид: после сверки берём реальную цену со страницы товара.
+# Мягкий импорт — если модуля/requests нет, просто не дёргаем цену (без падений).
+try:
+    from price_fetch import fetch_price
+except Exception:
+    fetch_price = None
+
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
@@ -301,6 +308,19 @@ async def main():
             conf = int(conf)
         except Exception:
             conf = 0
+
+        # ГИБРИД: товар найден сверкой -> идём на его страницу и берём реальную цену.
+        # fetch_price сам молча вернёт None для неподдержанных площадок и для
+        # ссылок-категорий, поэтому лишних запросов и фальшивых цен не будет.
+        if fetch_price and status in ("FOUND_EXACT", "FOUND_PARTIAL"):
+            src = result.get("source_url")
+            if src:
+                try:
+                    price, _note = await asyncio.to_thread(fetch_price, src)
+                    if price:
+                        result["price"] = price
+                except Exception:
+                    pass
 
         await conn.execute(
             "UPDATE tenders SET match_result=$1::jsonb, match_status=$2, found_url=$3, confidence=$4, stage='searched' WHERE id=$5",

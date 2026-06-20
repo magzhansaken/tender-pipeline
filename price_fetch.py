@@ -55,9 +55,24 @@ def extract_satu_price(html):
     return None
 
 
+def is_satu_product_url(url):
+    """
+    True только для НАСТОЯЩЕЙ карточки товара satu.kz (есть p{номер} в адресе),
+    например .../p123511701-ugolnik.html или .../kz/p110908241-dvigatel.html.
+    Страницы категорий/листингов (.../kz/Dizelnoe-toplivo, .../taraz/Filtr.html)
+    не проходят — на них цена первого попавшегося товара, ей доверять нельзя.
+    """
+    return bool(re.search(r'(^|/)p\d{4,}-', url or ""))
+
+
 # домен -> функция-извлекатель (позже добавим kaspi и др.)
 EXTRACTORS = {
     "satu.kz": extract_satu_price,
+}
+
+# домен -> функция-проверка, что ссылка ведёт на карточку товара (а не на категорию)
+URL_GUARDS = {
+    "satu.kz": is_satu_product_url,
 }
 
 
@@ -72,6 +87,10 @@ def fetch_price(url, timeout=20):
     site = next((d for d in EXTRACTORS if d in url), None)
     if not site:
         return None, "нет извлекателя для этой площадки (пока только satu.kz)"
+
+    guard = URL_GUARDS.get(site)
+    if guard and not guard(url):
+        return None, "не карточка товара (категория/листинг) — цену пропускаем"
 
     try:
         resp = requests.get(url, headers=HEADERS, timeout=timeout)
