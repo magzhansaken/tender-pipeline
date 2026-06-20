@@ -80,6 +80,45 @@ def extract_kaspi_price(html):
     return None
 
 
+def extract_chipdip_price(html):
+    """
+    Цена со страницы товара chipdip.kz. Логика из рабочего сборщика Chipdip
+    (несколько методов, от самого надёжного к запасному):
+      1) itemprop="price" content="10700"   (микроразметка товара — надёжно)
+      2) content="10700" ... itemprop="price"
+      3) <meta property="product:price:amount" content="10700">
+      4) JSON "price":10700  (ловит и JSON-LD без парсинга)
+      5) data-price="10700"
+      6) >10 700 ₸<  (цена с тенге между тегами)
+    Возвращает int (тенге) или None.
+    """
+    m = re.search(r'itemprop=["\']price["\'][^>]*content=["\'](\d+)["\']', html, re.I)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'content=["\'](\d+)["\'][^>]*itemprop=["\']price["\']', html, re.I)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'<meta[^>]*property=["\']product:price:amount["\'][^>]*content=["\'](\d+)', html, re.I)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'"price"\s*:\s*"?(\d{2,})"?', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'data-price=["\'](\d+)["\']', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'>(\d{1,3}(?:[\s,\u00a0]\d{3})*)\s*\u20b8<', html)
+    if m:
+        return int(re.sub(r"\D", "", m.group(1)))
+
+    return None
+
+
 def is_satu_product_url(url):
     """
     True только для НАСТОЯЩЕЙ карточки товара satu.kz (есть p{номер} в адресе),
@@ -98,16 +137,26 @@ def is_kaspi_product_url(url):
     return "/shop/p/" in (url or "")
 
 
+def is_chipdip_product_url(url):
+    """
+    True для карточки товара chipdip.kz (в адресе есть /product/).
+    Категории/поиск (/search) не проходят.
+    """
+    return "/product/" in (url or "")
+
+
 # домен -> функция-извлекатель цены со страницы товара
 EXTRACTORS = {
     "satu.kz": extract_satu_price,
     "kaspi.kz": extract_kaspi_price,
+    "chipdip.kz": extract_chipdip_price,
 }
 
 # домен -> функция-проверка, что ссылка ведёт на карточку товара (а не на категорию)
 URL_GUARDS = {
     "satu.kz": is_satu_product_url,
     "kaspi.kz": is_kaspi_product_url,
+    "chipdip.kz": is_chipdip_product_url,
 }
 
 # домен -> доп. заголовки (некоторым площадкам нужен Referer и т.п.)
