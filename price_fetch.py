@@ -216,6 +216,70 @@ SITE_HEADERS = {
 }
 
 
+def _wb_article_from_url(url):
+    """Артикул (nmId) из ссылки-карточки Wildberries."""
+    u = url or ""
+    m = re.search(r"/catalog/(\d{4,})/detail", u)
+    if m:
+        return m.group(1)
+    m = re.search(r"/catalog/(\d{6,})", u)
+    if m:
+        return m.group(1)
+    return None
+
+
+def fetch_wb_price(url, timeout=20):
+    """
+    Цена с Wildberries по ссылке-карточке — БЕСПЛАТНО через открытый JSON-API WB
+    по артикулу из ссылки (без браузера). Цена в РУБЛЯХ (publish пересчитает ×курс).
+    Берёт salePriceU/priceU или новый sizes[].price (в копейках, ÷100).
+    Возвращает (price_rub|None, note).
+    """
+    article = _wb_article_from_url(url)
+    if not article:
+        return None, "wb: нет артикула в ссылке"
+    endpoints = (
+        f"https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&nm={article}",
+        f"https://card.wb.ru/cards/detail?appType=1&curr=rub&dest=-1257786&nm={article}",
+    )
+    headers = {
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+        "Accept": "application/json",
+    }
+    last = "wb: не удалось"
+    for api in endpoints:
+        try:
+            resp = requests.get(api, headers=headers, timeout=timeout)
+        except Exception as e:
+            last = f"wb: сеть {str(e)[:40]}"
+            continue
+        if resp.status_code != 200:
+            last = f"wb: HTTP {resp.status_code}"
+            continue
+        try:
+            products = resp.json().get("data", {}).get("products", [])
+        except Exception:
+            last = "wb: не JSON"
+            continue
+        if not products:
+            last = "wb: товар не найден в API"
+            continue
+        p = products[0]
+        # новый формат: sizes[].price.{product,total} (копейки)
+        for sz in p.get("sizes", []):
+            pr = sz.get("price") or {}
+            raw = pr.get("product") or pr.get("total")
+            if raw:
+                return int(round(raw / 100)), "wb:sizes.price"
+        # старый формат: salePriceU / priceU (копейки)
+        raw = p.get("salePriceU") or p.get("priceU")
+        if raw:
+            return int(round(raw / 100)), "wb:salePriceU"
+        last = "wb: цена не найдена в ответе"
+    return None, last
+
+
 def fetch_price(url, timeout=20):
     """
     Фетчит страницу товара по ссылке и достаёт цену.
@@ -223,6 +287,10 @@ def fetch_price(url, timeout=20):
     """
     if not url:
         return None, "пустая ссылка"
+
+    # Wildberries — через открытый JSON-API по артикулу (не HTML-скрейпинг)
+    if "wildberries.ru" in url:
+        return fetch_wb_price(url, timeout)
 
     site = next((d for d in EXTRACTORS if d in url), None)
     if not site:
@@ -352,6 +420,45 @@ def run_from_db(n):
     print(f"\nИтог: цена достана у {ok} из {len(supported)}.")
 
 
+def run_wb_from_db(n):
+    """Тест WB на реальных ссылках из базы: берёт найденные wildberries.ru-лоты
+    и пробует достать цену через открытый API по каждой ссылке."""
+    import os
+    import asyncio
+    import asyncpg
+
+    db = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
+
+    async def go():
+        conn = await asyncpg.connect(db)
+        rows = await conn.fetch(
+            "SELECT COALESCE(found_url, match_result->>'source_url') AS url, "
+            "       match_result->>'product_name' AS prod "
+            "FROM tenders "
+            "WHERE match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
+            "  AND COALESCE(found_url, match_result->>'source_url') ILIKE '%wildberries.ru%' "
+            "ORDER BY collected_at DESC LIMIT $1",
+            n,
+        )
+        await conn.close()
+        return rows
+
+    rows = asyncio.run(go())
+    if not rows:
+        print("В базе нет wildberries.ru-ссылок.")
+        return
+
+    print(f"Проверяю {len(rows)} ссылок Wildberries (цена в ₽):\n")
+    ok = 0
+    for r in rows:
+        price, note = fetch_wb_price(r["url"])
+        if price:
+            ok += 1
+        print(f"  {(_fmt(price) if price else '—'):>12} ₽  [{note}]  {(r['prod'] or '')[:30]}")
+        print(f"      {(r['url'] or '')[:90]}")
+    print(f"\nИтог: цена достана у {ok} из {len(rows)}.")
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -359,6 +466,9 @@ def main():
         return
     if args[0] == "--from-db":
         run_from_db(int(args[1]) if len(args) > 1 else 10)
+        return
+    if args[0] == "--wb-from-db":
+        run_wb_from_db(int(args[1]) if len(args) > 1 else 8)
         return
     for url in args:
         price, note = fetch_price(url)
