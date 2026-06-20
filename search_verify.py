@@ -45,7 +45,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/ten
 LIMIT = int(os.getenv("LIMIT", "0"))
 DELAY = float(os.getenv("DELAY", "1.0"))
 
-SITES_DEFAULT = "kaspi.kz,satu.kz,chipdip.kz,ozon.ru,wildberries.ru,market.yandex.ru,alibaba.com,1688.com"
+SITES_DEFAULT = "kaspi.kz,satu.kz,chipdip.kz,otvertka.kz,ozon.ru,wildberries.ru,market.yandex.ru,alibaba.com,1688.com"
 SITES = [s.strip() for s in os.getenv("SITES", SITES_DEFAULT).split(",") if s.strip()]
 DDGS_WORKERS = int(os.getenv("DDGS_WORKERS", "6"))
 DDGS_PAUSE = float(os.getenv("DDGS_PAUSE", "0.4"))

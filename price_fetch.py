@@ -119,6 +119,39 @@ def extract_chipdip_price(html):
     return None
 
 
+def extract_otvertka_price(html):
+    """
+    Цена со страницы товара otvertka.kz (магазин на OpenCart):
+      1) itemprop="price" content="28300"   (микроразметка — надёжно)
+      2) content="28300" ... itemprop="price"
+      3) "price":"28300"
+      4) data-price="28300"
+      5) отображаемая цена "28 300 тг"  (запасной)
+    Возвращает int (тенге) или None.
+    """
+    m = re.search(r'itemprop=["\']price["\'][^>]*content=["\'](\d+)["\']', html, re.I)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'content=["\'](\d+)["\'][^>]*itemprop=["\']price["\']', html, re.I)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'"price"\s*:\s*"?(\d{3,})"?', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'data-price=["\'](\d+)["\']', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'(\d{1,3}(?:[\s\u00a0]\d{3})+|\d{3,})\s*тг', html, re.I)
+    if m:
+        return int(re.sub(r"\D", "", m.group(1)))
+
+    return None
+
+
 def is_satu_product_url(url):
     """
     True только для НАСТОЯЩЕЙ карточки товара satu.kz (есть p{номер} в адресе),
@@ -145,11 +178,28 @@ def is_chipdip_product_url(url):
     return "/product/" in (url or "")
 
 
+def is_otvertka_product_url(url):
+    """
+    True для карточки товара otvertka.kz (артикул одним сегментом в адресе,
+    напр. otvertka.kz/0603130020/). Категории, поиск и служебные — нет.
+    """
+    u = (url or "").lower()
+    if "otvertka.kz" not in u:
+        return False
+    bad = ["/search", "/category/", "/catalog", "/katalog", "/tools/", "/about/",
+           "/contact/", "/brands/", "/service-center/", "?q=", "?page=", "?sort="]
+    if any(b in u for b in bad):
+        return False
+    path = u.split("?")[0]
+    return bool(re.search(r'otvertka\.kz/[a-z0-9-]{5,}/?$', path))
+
+
 # домен -> функция-извлекатель цены со страницы товара
 EXTRACTORS = {
     "satu.kz": extract_satu_price,
     "kaspi.kz": extract_kaspi_price,
     "chipdip.kz": extract_chipdip_price,
+    "otvertka.kz": extract_otvertka_price,
 }
 
 # домен -> функция-проверка, что ссылка ведёт на карточку товара (а не на категорию)
@@ -157,6 +207,7 @@ URL_GUARDS = {
     "satu.kz": is_satu_product_url,
     "kaspi.kz": is_kaspi_product_url,
     "chipdip.kz": is_chipdip_product_url,
+    "otvertka.kz": is_otvertka_product_url,
 }
 
 # домен -> доп. заголовки (некоторым площадкам нужен Referer и т.п.)
