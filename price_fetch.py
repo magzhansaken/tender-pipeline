@@ -249,6 +249,60 @@ def fetch_price(url, timeout=20):
     return price, "ok"
 
 
+HEAVY_SITES = ("ozon.", "wildberries.", "yandex.")
+
+
+def is_heavy_site(url):
+    """True для тяжёлых сайтов (ozon/wildberries/yandex), где цену со страницы
+    дёшево не взять — только там подключаем поиск Олламы как ориентир."""
+    u = (url or "").lower()
+    return any(h in u for h in HEAVY_SITES)
+
+
+def fetch_price_by_name_ollama(name, timeout=45):
+    """
+    Цена-ОРИЕНТИР через поиск Олламы — fallback ТОЛЬКО для тяжёлых сайтов
+    (ozon/wb/yandex), где цену со страницы не взять. Ищет товар по названию
+    в любом магазине, берёт первую цену: ₸ в приоритете, иначе руб->₸.
+    ТРАТИТ лимит Олламы — вызывать только по тяжёлым «дыркам».
+    Возвращает (price_kzt|None, note). Цена уже в тенге.
+    """
+    import os
+    key = os.getenv("OLLAMA_API_KEY")
+    if not key or not name:
+        return None, "ollama: нет ключа или названия"
+    rate_rub = float(os.getenv("RATE_RUB", "5.0"))
+    try:
+        resp = requests.post(
+            "https://ollama.com/api/web_search",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"query": f"{name} купить цена"},
+            timeout=timeout,
+        )
+    except Exception as e:
+        return None, f"ollama: сеть {str(e)[:40]}"
+    if resp.status_code != 200:
+        return None, f"ollama: HTTP {resp.status_code}"
+    try:
+        results = resp.json().get("results", [])
+    except Exception:
+        return None, "ollama: не JSON"
+
+    for res in results:
+        content = res.get("content", "") or ""
+        m = re.search(r"(\d[\d\s\u2009\u00a0]{2,})\s*\u20b8", content)
+        if m:
+            v = int(re.sub(r"\D", "", m.group(1)))
+            if 100 < v < 50_000_000:
+                return v, "ollama:₸"
+        m = re.search(r"(\d[\d\s\u2009\u00a0]{2,})\s*(?:руб|₽|р\.)", content, re.I)
+        if m:
+            v = int(re.sub(r"\D", "", m.group(1)))
+            if 100 < v < 50_000_000:
+                return int(round(v * rate_rub)), "ollama:руб→₸"
+    return None, "ollama: цена не найдена"
+
+
 def _fmt(price):
     return (f"{price:,}".replace(",", " ") + " \u20b8") if price else "\u2014"
 

@@ -35,9 +35,11 @@ from ollama import Client
 # Гибрид: после сверки берём реальную цену со страницы товара.
 # Мягкий импорт — если модуля/requests нет, просто не дёргаем цену (без падений).
 try:
-    from price_fetch import fetch_price
+    from price_fetch import fetch_price, fetch_price_by_name_ollama, is_heavy_site
 except Exception:
     fetch_price = None
+    fetch_price_by_name_ollama = None
+    is_heavy_site = None
 
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
@@ -315,12 +317,29 @@ async def main():
         if fetch_price and status in ("FOUND_EXACT", "FOUND_PARTIAL"):
             src = result.get("source_url")
             if src:
+                # 1) Бесплатный скрейпер (лёгкие KZ-площадки: kaspi/satu/chipdip/otvertka)
                 try:
                     price, _note = await asyncio.to_thread(fetch_price, src)
                     if price:
                         result["price"] = price
                 except Exception:
                     pass
+                # 2) Тяжёлый сайт (ozon/wb/yandex) и цены всё ещё нет ->
+                #    ОРИЕНТИР через поиск Олламы по названию. Тратит лимит Олламы,
+                #    поэтому подключается ТОЛЬКО здесь, на тяжёлых «дырках».
+                if (not result.get("price") and fetch_price_by_name_ollama
+                        and is_heavy_site and is_heavy_site(src)):
+                    pname = result.get("product_name") or r["name"]
+                    try:
+                        price, _note = await asyncio.to_thread(
+                            fetch_price_by_name_ollama, pname)
+                        if price:
+                            result["price"] = price
+                            result["price_estimate"] = True   # это ориентир, не точная цена
+                            result["price_currency"] = "KZT"  # уже в тенге — publish не пересчитывает
+                            result["price_source"] = "ollama"
+                    except Exception:
+                        pass
 
         await conn.execute(
             "UPDATE tenders SET match_result=$1::jsonb, match_status=$2, found_url=$3, confidence=$4, stage='searched' WHERE id=$5",

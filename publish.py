@@ -152,7 +152,12 @@ async def main():
         except Exception:
             lot_price = None
 
-        purchase = to_kzt(parse_price(mr.get("price")), site)
+        # Цена-ориентир от Олламы уже в тенге -> не пересчитываем по сайту
+        # (иначе ozon.ru дал бы ×5 поверх уже сконвертированного — двойной счёт).
+        if mr.get("price_currency") == "KZT":
+            purchase = parse_price(mr.get("price"))
+        else:
+            purchase = to_kzt(parse_price(mr.get("price")), site)
         qty = to_int(r["quantity"])
 
         ln = r["lot_number"] or ""
