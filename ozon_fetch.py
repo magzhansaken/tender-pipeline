@@ -48,14 +48,25 @@ def extract_prices(html):
 
 
 def get_html(url):
+    import os
     from playwright.sync_api import sync_playwright
     try:
         from playwright_stealth import stealth_sync
     except Exception:
         stealth_sync = None
 
+    # Прокси берём из переменных окружения (в публичный репозиторий НЕ кладём!):
+    #   PROXY_SERVER=http://gate.example.com:7000
+    #   PROXY_USER=...   PROXY_PASS=...
+    proxy = None
+    if os.getenv("PROXY_SERVER"):
+        proxy = {"server": os.getenv("PROXY_SERVER")}
+        if os.getenv("PROXY_USER"):
+            proxy["username"] = os.getenv("PROXY_USER")
+            proxy["password"] = os.getenv("PROXY_PASS", "")
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=LAUNCH_ARGS)
+        browser = p.chromium.launch(headless=True, args=LAUNCH_ARGS, proxy=proxy)
         try:
             ctx = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
@@ -63,6 +74,16 @@ def get_html(url):
                 locale="ru-RU",
             )
             page = ctx.new_page()
+
+            # Экономим трафик прокси: не грузим картинки, видео и шрифты —
+            # цена в тексте страницы, эти ресурсы для неё не нужны.
+            def _block(route):
+                if route.request.resource_type in ("image", "media", "font"):
+                    route.abort()
+                else:
+                    route.continue_()
+            page.route("**/*", _block)
+
             if stealth_sync:
                 try:
                     stealth_sync(page)
@@ -76,9 +97,12 @@ def get_html(url):
 
 
 def main():
+    import os
     arg = sys.argv[1] if len(sys.argv) > 1 else "ноутбук lenovo"
     url = arg if arg.startswith("http") else f"https://ozon.kz/search/?text={quote(arg)}&from_global=true"
 
+    proxy_on = bool(os.getenv("PROXY_SERVER"))
+    print(f"Прокси: {'ВКЛ (' + os.getenv('PROXY_SERVER') + ')' if proxy_on else 'выкл'}")
     print(f"Открываю: {url}")
     print("(запускается Chromium — первый раз это несколько минут на установку)\n")
     t = time.time()
