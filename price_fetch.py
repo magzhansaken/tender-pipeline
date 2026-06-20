@@ -55,6 +55,31 @@ def extract_satu_price(html):
     return None
 
 
+def extract_kaspi_price(html):
+    """
+    Цена со страницы товара kaspi.kz. Логика из рабочего сборщика Kaspi:
+      1) "unitPrice": 123456   (Kaspi встраивает JSON товара в страницу — надёжно)
+      2) "price":"123456"      (schema.org / JSON-LD, запасной)
+      3) item-card__prices-price>123 456   (HTML, последний запасной)
+    Возвращает int (тенге) или None.
+    """
+    m = re.search(r'"unitPrice"\s*:\s*(\d{3,})', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'"price"\s*:\s*"?(\d{3,})"?', html)
+    if m:
+        return int(m.group(1))
+
+    m = re.search(r'item-card__prices-price[^>]*>([\d\s\u00a0]+)', html)
+    if m:
+        digits = re.sub(r"\D", "", m.group(1))
+        if digits and int(digits) >= 100:
+            return int(digits)
+
+    return None
+
+
 def is_satu_product_url(url):
     """
     True только для НАСТОЯЩЕЙ карточки товара satu.kz (есть p{номер} в адресе),
@@ -65,14 +90,29 @@ def is_satu_product_url(url):
     return bool(re.search(r'(^|/)p\d{4,}-', url or ""))
 
 
-# домен -> функция-извлекатель (позже добавим kaspi и др.)
+def is_kaspi_product_url(url):
+    """
+    True для карточки товара kaspi.kz (адрес вида kaspi.kz/shop/p/...-12345/).
+    Категории (/shop/c/...) и поиск (/shop/search/) не проходят.
+    """
+    return "/shop/p/" in (url or "")
+
+
+# домен -> функция-извлекатель цены со страницы товара
 EXTRACTORS = {
     "satu.kz": extract_satu_price,
+    "kaspi.kz": extract_kaspi_price,
 }
 
 # домен -> функция-проверка, что ссылка ведёт на карточку товара (а не на категорию)
 URL_GUARDS = {
     "satu.kz": is_satu_product_url,
+    "kaspi.kz": is_kaspi_product_url,
+}
+
+# домен -> доп. заголовки (некоторым площадкам нужен Referer и т.п.)
+SITE_HEADERS = {
+    "kaspi.kz": {"Referer": "https://kaspi.kz/"},
 }
 
 
@@ -86,14 +126,17 @@ def fetch_price(url, timeout=20):
 
     site = next((d for d in EXTRACTORS if d in url), None)
     if not site:
-        return None, "нет извлекателя для этой площадки (пока только satu.kz)"
+        return None, "нет извлекателя для этой площадки"
 
     guard = URL_GUARDS.get(site)
     if guard and not guard(url):
         return None, "не карточка товара (категория/листинг) — цену пропускаем"
 
+    headers = dict(HEADERS)
+    headers.update(SITE_HEADERS.get(site, {}))
+
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=timeout)
+        resp = requests.get(url, headers=headers, timeout=timeout)
     except Exception as e:
         return None, f"ошибка сети: {str(e)[:60]}"
 
@@ -111,7 +154,8 @@ def _fmt(price):
 
 
 def run_from_db(n):
-    """Тест на реальных ссылках из базы: берёт найденные лоты на satu.kz и пробует цену."""
+    """Тест на реальных ссылках из базы: берёт найденные лоты на ПОДДЕРЖАННЫХ
+    площадках (satu.kz, kaspi.kz, ...) и пробует достать цену по каждой ссылке."""
     import os
     import asyncio
     import asyncpg
@@ -126,27 +170,32 @@ def run_from_db(n):
             "       match_result->>'product_name' AS prod "
             "FROM tenders "
             "WHERE match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
-            "  AND COALESCE(found_url, match_result->>'source_url') LIKE '%satu.kz%' "
-            "ORDER BY collected_at DESC LIMIT $1",
-            n,
+            "  AND COALESCE(found_url, match_result->>'source_url') IS NOT NULL "
+            "ORDER BY collected_at DESC LIMIT 600"
         )
         await conn.close()
         return rows
 
     rows = asyncio.run(go())
-    if not rows:
-        print("В базе нет найденных лотов со ссылкой на satu.kz.")
+    # оставляем только ссылки на поддержанные площадки
+    supported = [r for r in rows if any(d in (r["url"] or "") for d in EXTRACTORS)]
+    supported = supported[:n]
+
+    if not supported:
+        print("В базе нет найденных лотов со ссылками на поддержанные площадки "
+              f"({', '.join(EXTRACTORS)}).")
         return
 
-    print(f"Проверяю {len(rows)} ссылок на satu.kz:\n")
+    print(f"Проверяю {len(supported)} ссылок ({', '.join(EXTRACTORS)}):\n")
     ok = 0
-    for r in rows:
+    for r in supported:
+        site = next((d for d in EXTRACTORS if d in (r["url"] or "")), "?")
         price, note = fetch_price(r["url"])
         if price:
             ok += 1
-        print(f"  лот {r['lot']:<10} {_fmt(price):>14}  [{note}]  {(r['prod'] or '')[:38]}")
+        print(f"  лот {r['lot']:<10} {site:<9} {_fmt(price):>14}  [{note}]  {(r['prod'] or '')[:32]}")
         print(f"      {(r['url'] or '')[:95]}")
-    print(f"\nИтог: цена достана у {ok} из {len(rows)}.")
+    print(f"\nИтог: цена достана у {ok} из {len(supported)}.")
 
 
 def main():
