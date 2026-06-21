@@ -96,32 +96,36 @@ def _wb_article_from_url(url):
     return None
 
 
+def _find_price_deep(obj):
+    """Рекурсивно ищет цену в ЛЮБОМ JSON WB, не зная точной структуры:
+    объект price.{product,total,basic} (копейки) или salePriceU/priceU.
+    Возвращает первую разумную цену в ₽ или None."""
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            pr = o.get('price')
+            if isinstance(pr, dict):
+                raw = pr.get('product') or pr.get('total') or pr.get('basic')
+                if isinstance(raw, (int, float)) and raw > 1000:  # копейки → >10₽
+                    found.append(round(raw / 100))
+            for k in ('salePriceU', 'priceU'):
+                raw = o.get(k)
+                if isinstance(raw, (int, float)) and raw > 1000:
+                    found.append(round(raw / 100))
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(obj)
+    return found[0] if found else None
+
+
 def _price_from_card_json(data):
-    """Цена (₽) из ответа WB. Новый формат: products[].price.product (копейки),
-    старый: sizes[].price.* или salePriceU/priceU (копейки)."""
-    try:
-        products = (data.get("data") or {}).get("products") or []
-    except Exception:
-        products = []
-    if not products:
-        return None
-    p = products[0]
-    # новый формат: price.{product,total,basic}
-    pr = p.get("price") or {}
-    raw = pr.get("product") or pr.get("total") or pr.get("basic")
-    if raw:
-        return round(raw / 100)
-    # формат с размерами
-    for sz in p.get("sizes", []):
-        spr = sz.get("price") or {}
-        raw = spr.get("product") or spr.get("total") or spr.get("basic")
-        if raw:
-            return round(raw / 100)
-    # старый формат
-    raw = p.get("salePriceU") or p.get("priceU")
-    if raw:
-        return round(raw / 100)
-    return None
+    """Совместимость: ищет цену рекурсивно по всему объекту."""
+    return _find_price_deep(data)
 
 
 class WBPriceFetcher:
@@ -132,6 +136,7 @@ class WBPriceFetcher:
         self.context = None
         self.page = None
         self._captured = None
+        self._captured_list = []
         self.count = 0
         self._resp_count = 0
         self._hit_count = 0
@@ -145,7 +150,9 @@ class WBPriceFetcher:
            (('card.wb.ru' in u or 'u-card.wb.ru' in u) and 'detail' in u):
             try:
                 body = response.text()          # как в рабочем debug
-                self._captured = json.loads(body)
+                parsed = json.loads(body)
+                self._captured = parsed
+                self._captured_list.append(parsed)
                 self._hit_count += 1
             except Exception:
                 pass
@@ -214,6 +221,7 @@ class WBPriceFetcher:
                     self._warm_up()
                 self.count += 1
                 self._captured = None
+                self._captured_list = []
                 self._resp_count = 0
                 self._hit_count = 0
                 self._delay(2, 4)
@@ -228,25 +236,15 @@ class WBPriceFetcher:
                     pass
                 self._delay(3, 4)          # ждём подгрузки цены u-card
 
-                data = self._captured
-                if data:
-                    products = (data.get('data') or {}).get('products') or []
-                    chosen = None
-                    for p in products:
-                        if p.get('id') == art or p.get('nmId') == art or p.get('nm') == art:
-                            chosen = p
-                            break
-                    # ищем по точному артикулу — если точного id нет, берём первый
-                    if chosen is None and products:
-                        chosen = products[0]
-                    if chosen:
-                        pr = _price_from_card_json({"data": {"products": [chosen]}})
-                        if pr:
-                            idv = chosen.get('id') or chosen.get('nmId') or chosen.get('nm')
-                            exact = "точный" if idv == art else f"id={idv}"
-                            return pr, f"v4 ({exact})"
-                        return None, "товар есть, цена не разобрана"
-                return None, f"нет данных (ответов:{self._resp_count}, перехвачено:{self._hit_count})"
+                # Перебираем ВСЕ перехваченные тела, ищем цену рекурсивно
+                price = None
+                for d in self._captured_list:
+                    price = _find_price_deep(d)
+                    if price:
+                        break
+                if price:
+                    return price, f"v4 (перехв.{self._hit_count})"
+                return None, f"нет цены (ответов:{self._resp_count}, перехвачено:{self._hit_count})"
             except Exception as e:
                 self._stop()
                 last = f"ошибка: {str(e)[:60]}"
