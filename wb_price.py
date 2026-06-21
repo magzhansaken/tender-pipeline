@@ -80,8 +80,23 @@ DOM_PRICE_SELECTORS = [
 ]
 
 
+def _wb_article_from_url(url):
+    """Артикул (nmId) из ссылки Wildberries."""
+    u = url or ""
+    m = re.search(r"/catalog/(\d{4,})/detail", u)
+    if m:
+        return m.group(1)
+    m = re.search(r"/catalog/(\d{6,})", u)
+    if m:
+        return m.group(1)
+    m = re.search(r"/product/[^/]*?(\d{6,})", u)  # global.wildberries.ru/product/...-NNNN
+    if m:
+        return m.group(1)
+    return None
+
+
 def _price_from_card_json(data):
-    """Цена (₽) из ответа card.wb.ru: sizes[].price или salePriceU/priceU (копейки)."""
+    """Цена (₽) из ответа WB: sizes[].price или salePriceU/priceU (копейки)."""
     try:
         products = (data.get("data") or {}).get("products") or []
     except Exception:
