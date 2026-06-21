@@ -112,7 +112,9 @@ class WBPriceFetcher:
 
     def _on_response(self, response):
         u = response.url
-        if ("card.wb.ru" in u or "u-card.wb.ru" in u) and "detail" in u:
+        # Ответ поиска (как в рабочем парсере) ИЛИ карточки — ловим оба
+        if ('search.wb.ru' in u and 'search' in u) or \
+           (('card.wb.ru' in u or 'u-card.wb.ru' in u) and 'detail' in u):
             try:
                 self._captured = response.json()
             except Exception:
@@ -170,7 +172,14 @@ class WBPriceFetcher:
             pass
 
     def fetch(self, url, retry=1):
-        """Открыть карточку по ссылке и вернуть (price_rub|None, note)."""
+        """Цена по ссылке: берём АРТИКУЛ из ссылки и ищем его через search.wb.ru
+        (поиск работает на сервере, в отличие от прямого захода на карточку).
+        Среди результатов берём товар с тем же артикулом. Возврат (price_rub|None, note)."""
+        article = _wb_article_from_url(url)
+        if not article:
+            return None, "нет артикула в ссылке"
+        art = int(article)
+
         for attempt in range(retry + 1):
             try:
                 if self.count % 3 == 0 or not self.browser:
@@ -178,37 +187,41 @@ class WBPriceFetcher:
                     self._warm_up()
                 self.count += 1
                 self._captured = None
-                self._delay(1, 3)
-                self.page.goto(url, wait_until='domcontentloaded', timeout=60000)
+                self._delay(2, 4)
+
+                # Ищем по артикулу — выдача отдаёт JSON через search.wb.ru
+                search_url = f"https://www.wildberries.ru/catalog/0/search.aspx?search={art}"
+                self.page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
                 self._delay(3, 5)
                 try:
-                    self.page.evaluate('window.scrollBy(0, 400)')
+                    self.page.evaluate('window.scrollBy(0, 300)')
                 except Exception:
                     pass
                 self._delay(1, 2)
 
-                # 1) цена из перехваченного ответа card.wb.ru
-                if self._captured:
-                    pr = _price_from_card_json(self._captured)
-                    if pr:
-                        return pr, "api"
-
-                # 2) запасной разбор из HTML карточки
-                for sel in DOM_PRICE_SELECTORS:
-                    try:
-                        el = self.page.query_selector(sel)
-                    except Exception:
-                        el = None
-                    if el:
-                        txt = (el.inner_text() or "").replace('\xa0', ' ')
-                        m = re.search(r'[\d\s]{2,}', txt)
-                        if m:
-                            v = re.sub(r'\D', '', m.group())
-                            if v and 10 < int(v) < 50_000_000:
-                                return int(v), f"dom:{sel}"
-                return None, "цена не найдена на странице"
+                data = self._captured
+                if data:
+                    products = (data.get('data') or {}).get('products') or []
+                    # сначала ищем товар с тем же артикулом
+                    chosen = None
+                    for p in products:
+                        if p.get('id') == art:
+                            chosen = p
+                            break
+                    # если точного нет, но выдача из одного товара — берём его
+                    if chosen is None and len(products) == 1:
+                        chosen = products[0]
+                    if chosen:
+                        pr = _price_from_card_json({"data": {"products": [chosen]}})
+                        if pr:
+                            exact = "точный артикул" if chosen.get('id') == art else "первый из выдачи"
+                            return pr, f"search ({exact})"
+                        return None, "товар найден, но без цены в выдаче"
+                    if products:
+                        return None, f"в выдаче {len(products)} тов., артикул {art} не найден"
+                return None, "поиск не вернул данных"
             except Exception as e:
-                self._stop()  # перезапуск на следующей попытке
+                self._stop()
                 last = f"ошибка: {str(e)[:60]}"
         return None, last
 
