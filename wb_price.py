@@ -96,19 +96,27 @@ def _wb_article_from_url(url):
 
 
 def _price_from_card_json(data):
-    """Цена (₽) из ответа WB: sizes[].price или salePriceU/priceU (копейки)."""
+    """Цена (₽) из ответа WB. Новый формат: products[].price.product (копейки),
+    старый: sizes[].price.* или salePriceU/priceU (копейки)."""
     try:
         products = (data.get("data") or {}).get("products") or []
     except Exception:
-        return None
+        products = []
     if not products:
         return None
     p = products[0]
+    # новый формат: price.{product,total,basic}
+    pr = p.get("price") or {}
+    raw = pr.get("product") or pr.get("total") or pr.get("basic")
+    if raw:
+        return round(raw / 100)
+    # формат с размерами
     for sz in p.get("sizes", []):
-        pr = sz.get("price") or {}
-        raw = pr.get("product") or pr.get("total")
+        spr = sz.get("price") or {}
+        raw = spr.get("product") or spr.get("total") or spr.get("basic")
         if raw:
             return round(raw / 100)
+    # старый формат
     raw = p.get("salePriceU") or p.get("priceU")
     if raw:
         return round(raw / 100)
@@ -127,8 +135,9 @@ class WBPriceFetcher:
 
     def _on_response(self, response):
         u = response.url
-        # Ответ поиска (как в рабочем парсере) ИЛИ карточки — ловим оба
-        if ('search.wb.ru' in u and 'search' in u) or \
+        # WB переехал на /__internal/u-card/cards/v4/{detail,list}; плюс старые адреса
+        if ('u-card/cards/' in u and ('detail' in u or 'list' in u)) or \
+           ('search.wb.ru' in u and 'search' in u) or \
            (('card.wb.ru' in u or 'u-card.wb.ru' in u) and 'detail' in u):
             try:
                 self._captured = response.json()
@@ -204,37 +213,35 @@ class WBPriceFetcher:
                 self._captured = None
                 self._delay(2, 4)
 
-                # Ищем по артикулу — выдача отдаёт JSON через search.wb.ru
+                # Ищем по артикулу — выдача отдаёт JSON через u-card
                 search_url = f"https://www.wildberries.ru/catalog/0/search.aspx?search={art}"
                 self.page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
-                self._delay(3, 5)
+                self._delay(5, 7)          # ждём прохождения антибота WB
                 try:
-                    self.page.evaluate('window.scrollBy(0, 300)')
+                    self.page.evaluate('window.scrollBy(0, 400)')
                 except Exception:
                     pass
-                self._delay(1, 2)
+                self._delay(3, 4)          # ждём подгрузки цены u-card
 
                 data = self._captured
                 if data:
                     products = (data.get('data') or {}).get('products') or []
-                    # сначала ищем товар с тем же артикулом
                     chosen = None
                     for p in products:
-                        if p.get('id') == art:
+                        if p.get('id') == art or p.get('nmId') == art or p.get('nm') == art:
                             chosen = p
                             break
-                    # если точного нет, но выдача из одного товара — берём его
-                    if chosen is None and len(products) == 1:
+                    # ищем по точному артикулу — если точного id нет, берём первый
+                    if chosen is None and products:
                         chosen = products[0]
                     if chosen:
                         pr = _price_from_card_json({"data": {"products": [chosen]}})
                         if pr:
-                            exact = "точный артикул" if chosen.get('id') == art else "первый из выдачи"
-                            return pr, f"search ({exact})"
-                        return None, "товар найден, но без цены в выдаче"
-                    if products:
-                        return None, f"в выдаче {len(products)} тов., артикул {art} не найден"
-                return None, "поиск не вернул данных"
+                            idv = chosen.get('id') or chosen.get('nmId') or chosen.get('nm')
+                            exact = "точный" if idv == art else f"id={idv}"
+                            return pr, f"v4 ({exact})"
+                        return None, "товар есть, цена не разобрана"
+                return None, "поиск не вернул данных (антибот?)"
             except Exception as e:
                 self._stop()
                 last = f"ошибка: {str(e)[:60]}"
