@@ -286,13 +286,17 @@ def run_from_db(n):
 
 
 def debug_one(url):
-    """Открыть одну карточку и показать ВСЕ запросы WB + что в них, чтобы найти,
-    где лежит цена. Печатает url-ы api и куски тел, где встречается цена."""
+    """ГЛУБОКИЙ разбор: ловим ВСЕ ответы (без фильтра), сохраняем HTML целиком,
+    ищем цену в HTML и в телах ответов. Цель — понять структуру WB на сервере."""
     if sync_playwright is None:
         print("Playwright не установлен.")
         return
-    print(f"DEBUG карточки:\n  {url}\n")
-    seen = []
+
+    art = _wb_article_from_url(url)
+    print(f"DEBUG WB\n  ссылка: {url}\n  артикул: {art}\n")
+
+    all_resp = []   # (status, url, ctype, len)
+    json_hits = []  # (url, кусок тела с ценой)
 
     pw = sync_playwright().start()
     browser = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
@@ -307,66 +311,83 @@ def debug_one(url):
     page.set_extra_http_headers({'Accept-Language': 'ru-RU,ru;q=0.9'})
 
     def on_resp(resp):
-        u = resp.url
-        # интересны только домены WB, похожие на данные о товаре
-        if any(k in u for k in ('wb.ru', 'wbbasket.ru', 'basket-')) and \
-           any(k in u for k in ('detail', 'card', 'price', 'nm')):
+        try:
+            u = resp.url
             ct = (resp.headers or {}).get('content-type', '')
             body = ''
-            if 'json' in ct or u.endswith('.json'):
+            if 'json' in ct:
                 try:
-                    body = resp.text()[:600]
+                    body = resp.text()
                 except Exception:
-                    body = '<не прочитать>'
-            seen.append((resp.status, u, body))
+                    body = ''
+            all_resp.append((resp.status, u[:110], ct[:25], len(body)))
+            # ищем цену в JSON-телах
+            if body and any(k in body for k in ('salePriceU', 'priceU', '"price"', '"total"', '"product"')):
+                import re as _re
+                snip = ''
+                m = _re.search(r'.{0,30}(salePriceU|priceU|"price"|"total"|"product")["\s:]*\d+.{0,20}', body)
+                if m:
+                    snip = m.group(0)
+                json_hits.append((u[:90], snip[:120]))
+        except Exception:
+            pass
 
     page.on('response', on_resp)
 
-    # прогрев
+    print(">>> прогрев главной...")
     try:
         page.goto('https://www.wildberries.ru/', wait_until='domcontentloaded', timeout=60000)
         time.sleep(3)
-    except Exception:
-        pass
-    # карточка
+    except Exception as e:
+        print("  главная:", str(e)[:70])
+
+    # ПОИСК по артикулу
+    search_url = f"https://www.wildberries.ru/catalog/0/search.aspx?search={art}"
+    print(f">>> поиск по артикулу: {search_url}")
     try:
-        page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
         time.sleep(6)
-        page.evaluate('window.scrollBy(0, 600)')
+        page.evaluate('window.scrollBy(0, 500)')
         time.sleep(3)
     except Exception as e:
-        print("ошибка загрузки:", str(e)[:80])
+        print("  поиск:", str(e)[:70])
 
-    print(f"=== Запросы WB, похожие на данные о товаре ({len(seen)}) ===")
-    for status, u, body in seen:
-        print(f"\n[{status}] {u[:130]}")
-        if body:
-            flat = body.replace('\n', ' ')
-            print(f"   тело: {flat[:300]}")
-            # подсветим, если в теле есть похожее на цену
-            import re as _re
-            for kw in ('salePriceU', 'priceU', '"price"', 'product":', 'total":'):
-                if kw in body:
-                    m = _re.search(_re.escape(kw) + r'[\":\s]*\d+', body)
-                    if m:
-                        print(f"   ★ {m.group()[:40]}")
-
-    # заодно глянем, что в DOM похоже на цену
-    print("\n=== Элементы DOM с 'price' в классе ===")
+    html = ''
     try:
-        nodes = page.query_selector_all('[class*="price"]')
-        shown = 0
-        for nd in nodes:
-            try:
-                cls = nd.get_attribute('class') or ''
-                txt = (nd.inner_text() or '').strip().replace('\xa0', ' ')
-            except Exception:
-                continue
-            if txt and any(ch.isdigit() for ch in txt) and shown < 12:
-                print(f"   .{cls[:45]:45} -> {txt[:30]}")
-                shown += 1
-    except Exception as e:
-        print("  dom-проба не удалась:", str(e)[:60])
+        html = page.content()
+    except Exception:
+        pass
+
+    # 1) ВСЕ ответы
+    print(f"\n=== ВСЕ ответы браузера: {len(all_resp)} ===")
+    for st, u, ct, ln in all_resp[:40]:
+        print(f"  [{st}] {ln:>7}b {ct:25} {u}")
+
+    # 2) где в JSON встретилась цена
+    print(f"\n=== JSON-тела с ценой: {len(json_hits)} ===")
+    for u, snip in json_hits[:15]:
+        print(f"  {u}\n     {snip}")
+
+    # 3) что в HTML
+    print(f"\n=== HTML страницы поиска: {len(html)} символов ===")
+    low = html.lower()
+    print(f"  есть 'товары не найдены': {'товары не найдены' in low or 'ничего не найдено' in low}")
+    print(f"  есть 'каптча/captcha/доступ': {'captcha' in low or 'доступ ограничен' in low or 'robot' in low}")
+    print(f"  есть 'product-card': {'product-card' in low}")
+    print(f"  есть 'price': {'price' in low}")
+    print(f"  заголовок страницы: {html[html.find('<title>')+7:html.find('</title>')][:80] if '<title>' in html else '—'}")
+    # подсветим цену прямо из HTML, если есть
+    import re as _re
+    rub = _re.findall(r'(\d[\d\s\u00a0]{2,})\s*₽', html)
+    print(f"  числа перед ₽ в HTML (первые 8): {rub[:8]}")
+
+    # сохраним HTML, чтобы при желании посмотреть глазами
+    try:
+        with open('/app/wb_debug.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+        print("\n  HTML сохранён: /app/wb_debug.html (можно открыть/скопировать)")
+    except Exception:
+        pass
 
     try:
         page.close(); context.close(); browser.close(); pw.stop()
