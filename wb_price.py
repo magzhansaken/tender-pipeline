@@ -161,12 +161,9 @@ class WBPriceFetcher:
         )
         self.context.add_init_script(STEALTH_JS)
         self.page = self.context.new_page()
-        self.page.set_extra_http_headers({
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-        })
+        # ВАЖНО: не подставляем Sec-Ch-Ua вручную — реальный Chrome шлёт свои,
+        # а антибот WB сверяет их с движком. Ставим только язык (как в рабочем debug).
+        self.page.set_extra_http_headers({'Accept-Language': 'ru-RU,ru;q=0.9'})
         self.page.on('response', self._on_response)
 
     def _stop(self):
