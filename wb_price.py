@@ -257,6 +257,95 @@ def run_from_db(n):
     print(f"\nИтог: цена достана у {ok} из {len(rows)}.")
 
 
+def debug_one(url):
+    """Открыть одну карточку и показать ВСЕ запросы WB + что в них, чтобы найти,
+    где лежит цена. Печатает url-ы api и куски тел, где встречается цена."""
+    if sync_playwright is None:
+        print("Playwright не установлен.")
+        return
+    print(f"DEBUG карточки:\n  {url}\n")
+    seen = []
+
+    pw = sync_playwright().start()
+    browser = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
+    context = browser.new_context(
+        viewport={'width': 1920, 'height': 1080}, user_agent=UA,
+        locale='ru-RU', timezone_id='Europe/Moscow',
+        geolocation={'latitude': 55.7558, 'longitude': 37.6173},
+        permissions=['geolocation'], color_scheme='light',
+    )
+    context.add_init_script(STEALTH_JS)
+    page = context.new_page()
+    page.set_extra_http_headers({'Accept-Language': 'ru-RU,ru;q=0.9'})
+
+    def on_resp(resp):
+        u = resp.url
+        # интересны только домены WB, похожие на данные о товаре
+        if any(k in u for k in ('wb.ru', 'wbbasket.ru', 'basket-')) and \
+           any(k in u for k in ('detail', 'card', 'price', 'nm')):
+            ct = (resp.headers or {}).get('content-type', '')
+            body = ''
+            if 'json' in ct or u.endswith('.json'):
+                try:
+                    body = resp.text()[:600]
+                except Exception:
+                    body = '<не прочитать>'
+            seen.append((resp.status, u, body))
+
+    page.on('response', on_resp)
+
+    # прогрев
+    try:
+        page.goto('https://www.wildberries.ru/', wait_until='domcontentloaded', timeout=60000)
+        time.sleep(3)
+    except Exception:
+        pass
+    # карточка
+    try:
+        page.goto(url, wait_until='domcontentloaded', timeout=60000)
+        time.sleep(6)
+        page.evaluate('window.scrollBy(0, 600)')
+        time.sleep(3)
+    except Exception as e:
+        print("ошибка загрузки:", str(e)[:80])
+
+    print(f"=== Запросы WB, похожие на данные о товаре ({len(seen)}) ===")
+    for status, u, body in seen:
+        print(f"\n[{status}] {u[:130]}")
+        if body:
+            flat = body.replace('\n', ' ')
+            print(f"   тело: {flat[:300]}")
+            # подсветим, если в теле есть похожее на цену
+            import re as _re
+            for kw in ('salePriceU', 'priceU', '"price"', 'product":', 'total":'):
+                if kw in body:
+                    m = _re.search(_re.escape(kw) + r'[\":\s]*\d+', body)
+                    if m:
+                        print(f"   ★ {m.group()[:40]}")
+
+    # заодно глянем, что в DOM похоже на цену
+    print("\n=== Элементы DOM с 'price' в классе ===")
+    try:
+        nodes = page.query_selector_all('[class*="price"]')
+        shown = 0
+        for nd in nodes:
+            try:
+                cls = nd.get_attribute('class') or ''
+                txt = (nd.inner_text() or '').strip().replace('\xa0', ' ')
+            except Exception:
+                continue
+            if txt and any(ch.isdigit() for ch in txt) and shown < 12:
+                print(f"   .{cls[:45]:45} -> {txt[:30]}")
+                shown += 1
+    except Exception as e:
+        print("  dom-проба не удалась:", str(e)[:60])
+
+    try:
+        page.close(); context.close(); browser.close(); pw.stop()
+    except Exception:
+        pass
+
+
 def main():
     if sync_playwright is None:
         print("Playwright не установлен. pip install playwright && playwright install chromium")
@@ -267,6 +356,10 @@ def main():
         return
     if args[0] == "--from-db":
         run_from_db(int(args[1]) if len(args) > 1 else 8)
+        return
+    if args[0] == "--debug":
+        debug_url = args[1] if len(args) > 1 else "https://www.wildberries.ru/catalog/73193253/detail.aspx"
+        debug_one(debug_url)
         return
 
     url = args[0]
