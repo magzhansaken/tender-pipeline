@@ -20,6 +20,7 @@ CLI:
 import re
 import sys
 import time
+import json
 import random
 
 try:
@@ -132,15 +133,20 @@ class WBPriceFetcher:
         self.page = None
         self._captured = None
         self.count = 0
+        self._resp_count = 0
+        self._hit_count = 0
 
     def _on_response(self, response):
         u = response.url
+        self._resp_count += 1
         # WB переехал на /__internal/u-card/cards/v4/{detail,list}; плюс старые адреса
         if ('u-card/cards/' in u and ('detail' in u or 'list' in u)) or \
            ('search.wb.ru' in u and 'search' in u) or \
            (('card.wb.ru' in u or 'u-card.wb.ru' in u) and 'detail' in u):
             try:
-                self._captured = response.json()
+                body = response.text()          # как в рабочем debug
+                self._captured = json.loads(body)
+                self._hit_count += 1
             except Exception:
                 pass
 
@@ -208,6 +214,8 @@ class WBPriceFetcher:
                     self._warm_up()
                 self.count += 1
                 self._captured = None
+                self._resp_count = 0
+                self._hit_count = 0
                 self._delay(2, 4)
 
                 # Ищем по артикулу — выдача отдаёт JSON через u-card
@@ -238,7 +246,7 @@ class WBPriceFetcher:
                             exact = "точный" if idv == art else f"id={idv}"
                             return pr, f"v4 ({exact})"
                         return None, "товар есть, цена не разобрана"
-                return None, "поиск не вернул данных (антибот?)"
+                return None, f"нет данных (ответов:{self._resp_count}, перехвачено:{self._hit_count})"
             except Exception as e:
                 self._stop()
                 last = f"ошибка: {str(e)[:60]}"
