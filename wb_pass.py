@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Фоновый WB-проход (этап «цена WB»).
+"""Фоновый WB-проход (этап «цена WB») — СИНХРОННЫЙ (psycopg2), чтобы
+не конфликтовать с синхронным браузером Playwright.
 
 Берёт FOUND_EXACT WB-ссылки (живые, ещё без цены), тащит цену СТРОГО по
-артикулу через wb_price.WBPriceFetcher (2 попытки на ссылку) и пишет
-рублёвую цену в match_result.price. publish.py потом сам переведёт ×5 в
-тенге и выведет на витрину — править publish НЕ нужно.
+артикулу через wb_price.WBPriceFetcher (2 попытки) и пишет рублёвую цену
+в match_result.price. publish.py потом сам переведёт ×5 в тенге и выведет
+на витрину — править publish НЕ нужно.
 
 Чтобы не висеть вечно на снятых/глухих товарах, считаем попытки в
-match_result.wb_tries и после MAX_TRIES заходов ссылку больше не трогаем.
+match_result.wb_tries; после MAX_TRIES заходов ссылку больше не трогаем.
 
-ENV: DATABASE_URL, WB_LIMIT (сколько ссылок за один запуск, по умолч. 40),
-     WB_ATTEMPTS (повторы при антиботе, 2), WB_MAX_TRIES (заходов всего, 2).
+ENV: DATABASE_URL, WB_LIMIT (ссылок за запуск, 40), WB_ATTEMPTS (2),
+     WB_MAX_TRIES (всего заходов на ссылку, 2).
 """
 import os
 import json
 import time
-import asyncio
 
-import asyncpg
+import psycopg2
 
 from wb_price import WBPriceFetcher
 
@@ -27,18 +27,21 @@ LIMIT = int(os.getenv("WB_LIMIT", "40"))
 ATTEMPTS = int(os.getenv("WB_ATTEMPTS", "2"))
 MAX_TRIES = int(os.getenv("WB_MAX_TRIES", "2"))
 
+# %% — экранированный процент для psycopg2 (он использует %s для параметров)
 SELECT_SQL = """
 SELECT id, found_url, match_result
 FROM tenders
 WHERE match_status = 'FOUND_EXACT'
-  AND COALESCE(found_url, match_result->>'source_url') ILIKE '%wildberries.ru/catalog/%'
+  AND COALESCE(found_url, match_result->>'source_url') ILIKE '%%wildberries.ru/catalog/%%'
   AND is_closed = false
   AND (deadline IS NULL OR deadline >= now())
   AND (match_result->>'price') IS NULL
-  AND COALESCE((match_result->>'wb_tries')::int, 0) < $1
+  AND COALESCE((match_result->>'wb_tries')::int, 0) < %s
 ORDER BY collected_at DESC
-LIMIT $2
+LIMIT %s
 """
+
+UPDATE_SQL = "UPDATE tenders SET match_result = %s::jsonb WHERE id = %s"
 
 
 def merge_result(mr, price):
@@ -59,39 +62,44 @@ def merge_result(mr, price):
     return mr
 
 
-async def main():
-    conn = await asyncpg.connect(DATABASE_URL)
-    rows = await conn.fetch(SELECT_SQL, MAX_TRIES, LIMIT)
-    print(f"WB-проход: {len(rows)} ссылок к обработке (лимит {LIMIT}, попыток {ATTEMPTS})")
+def main():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    cur = conn.cursor()
+    cur.execute(SELECT_SQL, (MAX_TRIES, LIMIT))
+    rows = cur.fetchall()
+    print("WB-проход: %d ссылок к обработке (лимит %d, попыток %d)" % (len(rows), LIMIT, ATTEMPTS))
     if not rows:
-        await conn.close()
+        cur.close()
+        conn.close()
         return
+
     f = WBPriceFetcher(headless=True)
     got = 0
     try:
-        for i, r in enumerate(rows, 1):
-            mr_raw = r["match_result"]
+        for i, (rid, found_url, mr_raw) in enumerate(rows, 1):
             mr_dict = mr_raw
             if isinstance(mr_dict, str):
-                mr_dict = json.loads(mr_dict)
-            url = r["found_url"] or (mr_dict or {}).get("source_url")
+                try:
+                    mr_dict = json.loads(mr_dict)
+                except Exception:
+                    mr_dict = {}
+            url = found_url or (mr_dict or {}).get("source_url")
             t = time.time()
             price, note = f.fetch(url, attempts=ATTEMPTS)
             dt = time.time() - t
             new_mr = merge_result(mr_raw, price)
-            await conn.execute(
-                "UPDATE tenders SET match_result = $1::jsonb WHERE id = $2",
-                json.dumps(new_mr, ensure_ascii=False), r["id"],
-            )
+            cur.execute(UPDATE_SQL, (json.dumps(new_mr, ensure_ascii=False), rid))
             if price:
                 got += 1
-            shown = f"{price} \u20bd" if price else "\u2014"
-            print(f"  [{i}/{len(rows)}] {shown:>9}  ({dt:.0f}\u0441, {note})  id={r['id']}")
+            shown = ("%s \u20bd" % price) if price else "\u2014"
+            print("  [%d/%d] %9s  (%.0f\u0441, %s)  id=%s" % (i, len(rows), shown, dt, note, rid))
     finally:
         f._stop()
-        await conn.close()
-    print(f"\n\u0413\u043e\u0442\u043e\u0432\u043e: \u0446\u0435\u043d\u0430 \u0437\u0430\u043f\u0438\u0441\u0430\u043d\u0430 \u0443 {got} \u0438\u0437 {len(rows)}.")
+        cur.close()
+        conn.close()
+    print("\n\u0413\u043e\u0442\u043e\u0432\u043e: \u0446\u0435\u043d\u0430 \u0437\u0430\u043f\u0438\u0441\u0430\u043d\u0430 \u0443 %d \u0438\u0437 %d." % (got, len(rows)))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
