@@ -2,27 +2,37 @@
 # -*- coding: utf-8 -*-
 """Фоновый Alibaba-проход (этап «оптовый ориентир $») — СИНХРОННЫЙ (psycopg2).
 
-Берёт живые тендеры БЕЗ цены, делает английский ключ через Олламу, ищет в
-Alibaba Showroom (alibaba_price, с ретраями — Alibaba отдаёт «через раз»),
-и пишет в match_result ДИАПАЗОН-ОРИЕНТИР (схема Б): медиана + типичный
-коридор цен USD + минимальный MOQ. publish.py переведёт USD->тенге и пометит.
+Идёт по ВСЕМ живым подобранным тендерам без цены (жёсткого лимита в коде нет),
+для каждого: английский ключ через Олламу -> поиск Alibaba Showroom (с ретраями)
+-> диапазон-ориентир (схема Б, медиана + коридор USD + MOQ) в отдельные поля.
 
-Alibaba нестабилен с серверного IP (~1/3 запросов), поэтому:
-  - паузы между тендерами (ALI_GAP сек), чтобы не жечь «бюджет доверия»;
-  - счётчик ali_tries в match_result; после ALI_MAX_TRIES тендер не трогаем
-    (иначе вечно бьёмся в те, что не ловятся).
+ПАУЗА между тендерами — СЛУЧАЙНАЯ 15-20с (меньше похоже на бота; и не жжёт
+«бюджет доверия» Alibaba залпом).
 
-Пишем В ОТДЕЛЬНЫЕ поля (ali_*), НЕ перетираем основной матч с маркетплейса.
-Цена-ориентир кладётся в match_result.price ТОЛЬКО если её там ещё нет
-(чтобы не затирать точную тенге-цену с Kaspi/Satu).
+ДЕТЕКТОР ОСТАНОВКИ: Alibaba даёт ограниченное число запросов с нашего IP за
+период (дневная квота, паузой не лечится). Когда квота кончается — идут отказы
+подряд. Если подряд STOP_AFTER отказов (по умолч. 5) — значит квота исчерпана,
+дальше долбить бессмысленно: проход пишет в лог и КОРРЕКТНО выходит. Следующий
+запуск (по cron) продолжит — за это время квота частично восстановится.
+
+Счётчик ali_tries в match_result: после MAX_TRIES заходов тендер не трогаем
+(чтобы при живой квоте не залипать на тех, что не находятся в принципе).
+
+Пишем ориентир в ОТДЕЛЬНЫЕ поля ali_*. В слот match_result.price кладём только
+если цены ещё нет (чтобы не затереть точную тенге-цену Kaspi/Satu). Маржу из
+этого ориентира publish.py считать НЕ должен (доллар-опт ≠ закуп) — это решается
+на стороне publish.py отдельно.
 
 ENV: DATABASE_URL, OLLAMA_API_KEY, OLLAMA_MODEL (gpt-oss:20b),
-     ALI_LIMIT (тендеров за запуск, 15), ALI_RETRIES (попыток поиска, 5),
-     ALI_GAP (пауза между тендерами сек, 20), ALI_MAX_TRIES (заходов на тендер, 2)
+     ALI_RETRIES (попыток поиска, 5), ALI_GAP_MIN/ALI_GAP_MAX (пауза, 15/20),
+     ALI_STOP_AFTER (отказов подряд до остановки, 5),
+     ALI_MAX_TRIES (заходов на тендер всего, 3),
+     ALI_HARD_CAP (предохранитель: максимум тендеров за один запуск, 500)
 """
 import os
 import json
 import time
+import random
 import statistics
 
 import psycopg2
@@ -33,12 +43,16 @@ from alibaba_price import AlibabaPriceFetcher
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
-LIMIT = int(os.getenv("ALI_LIMIT", "15"))
 RETRIES = int(os.getenv("ALI_RETRIES", "5"))
-GAP = int(os.getenv("ALI_GAP", "20"))
-MAX_TRIES = int(os.getenv("ALI_MAX_TRIES", "2"))
+GAP_MIN = float(os.getenv("ALI_GAP_MIN", "15"))
+GAP_MAX = float(os.getenv("ALI_GAP_MAX", "20"))
+STOP_AFTER = int(os.getenv("ALI_STOP_AFTER", "5"))
+MAX_TRIES = int(os.getenv("ALI_MAX_TRIES", "3"))
+HARD_CAP = int(os.getenv("ALI_HARD_CAP", "500"))
 
-# Живые подобранные тендеры без цены, у кого ali-попыток меньше лимита.
+# Все живые подобранные тендеры без цены, у кого ali-попыток меньше лимита.
+# Жёсткого LIMIT нет — берём пачкой до HARD_CAP (предохранитель), но реально
+# проход остановит детектор квоты гораздо раньше.
 SELECT_SQL = """
 SELECT id, name, structured_spec, match_result
 FROM tenders
@@ -70,16 +84,13 @@ def ru_source(name, spec):
     if sq:
         return sq
     parts = [spec.get("product_type"), spec.get("brand"), spec.get("model")]
-    alt = " ".join(str(x) for x in parts if x).strip()
-    return alt or (name or "").strip()
+    return " ".join(str(x) for x in parts if x).strip() or (name or "").strip()
 
 
 def en_keyword(client, ru):
-    prompt = (
-        "Translate the following product into a SHORT English search keyword "
-        "(2-4 words) for the B2B wholesale marketplace Alibaba. "
-        "Answer with ONLY the keyword, no quotes, no explanation.\n\nProduct: " + ru
-    )
+    prompt = ("Translate the following product into a SHORT English search keyword "
+              "(2-4 words) for the B2B wholesale marketplace Alibaba. Answer with ONLY "
+              "the keyword, no quotes, no explanation.\n\nProduct: " + ru)
     try:
         resp = client.chat(model=OLLAMA_MODEL, messages=[{"role": "user", "content": prompt}])
         txt = (resp["message"]["content"] or "").strip()
@@ -98,26 +109,20 @@ def pct(sorted_vals, q):
 
 
 def build_orient(products):
-    """Схема Б: диапазон-ориентир. Возврат dict для записи или None."""
     mins = sorted([p["usd_min"] for p in products if p.get("usd_min")])
     if not mins:
         return None
     med = statistics.median(mins)
-    p25 = pct(mins, 0.25)
-    p75 = pct(mins, 0.75)
-    # минимальный MOQ среди товаров (самый доступный)
     moqs = [p.get("moq") for p in products if p.get("moq")]
-    moq = moqs[0] if moqs else ""
-    sample = products[0]["title"][:60]
     return {
-        "price": round(med, 2),                 # ориентир-цена = медиана USD
+        "price": round(med, 2),
         "price_source": "alibaba",
         "price_currency": "USD",
-        "ali_usd_low": round(p25, 2),
-        "ali_usd_high": round(p75, 2),
-        "ali_moq": moq,
+        "ali_usd_low": round(pct(mins, 0.25), 2),
+        "ali_usd_high": round(pct(mins, 0.75), 2),
+        "ali_moq": moqs[0] if moqs else "",
         "ali_count": len(mins),
-        "ali_sample": sample,
+        "ali_sample": products[0]["title"][:60],
         "source_site": "alibaba.com",
     }
 
@@ -133,11 +138,9 @@ def merge_result(mr, orient):
     mr = dict(mr)
     mr["ali_tries"] = int(mr.get("ali_tries") or 0) + 1
     if orient:
-        # не перетираем уже существующую цену (точную тенге с Kaspi/Satu и т.п.)
         if mr.get("price") in (None, "", 0):
             mr.update(orient)
         else:
-            # цена уже есть — кладём ориентир Alibaba в отдельные поля, не трогая price
             for k in ("ali_usd_low", "ali_usd_high", "ali_moq", "ali_count", "ali_sample"):
                 mr[k] = orient.get(k)
             mr["ali_orient_usd"] = orient.get("price")
@@ -153,10 +156,10 @@ def main():
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(SELECT_SQL, (MAX_TRIES, LIMIT))
+    cur.execute(SELECT_SQL, (MAX_TRIES, HARD_CAP))
     rows = cur.fetchall()
-    print("Alibaba-проход: %d тендеров (лимит %d, ретраев %d, пауза %dс)"
-          % (len(rows), LIMIT, RETRIES, GAP))
+    print("Alibaba-проход: в очереди %d тендеров | пауза %g-%gс наугад | стоп после %d отказов подряд"
+          % (len(rows), GAP_MIN, GAP_MAX, STOP_AFTER))
     if not rows:
         cur.close()
         conn.close()
@@ -164,35 +167,49 @@ def main():
 
     fetcher = AlibabaPriceFetcher()
     got = 0
+    processed = 0
+    miss_streak = 0
+    stopped = False
     try:
         for i, (rid, name, spec_raw, mr_raw) in enumerate(rows, 1):
             spec = as_dict(spec_raw)
             ru = ru_source(name, spec)
             kw = en_keyword(client, ru)
             if not kw:
-                new_mr = merge_result(mr_raw, None)
-                cur.execute(UPDATE_SQL, (json.dumps(new_mr, ensure_ascii=False), rid))
-                print("  [%d/%d] перевод не удался | id=%s" % (i, len(rows), rid))
+                cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, None), ensure_ascii=False), rid))
+                print("  [%d] перевод не удался | id=%s" % (i, rid))
                 continue
-            t = time.time()
+
             products, att = fetcher.search(kw, retries=RETRIES, delay=3.0)
             orient = build_orient(products) if products else None
-            new_mr = merge_result(mr_raw, orient)
-            cur.execute(UPDATE_SQL, (json.dumps(new_mr, ensure_ascii=False), rid))
-            dt = time.time() - t
+            cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, orient), ensure_ascii=False), rid))
+            processed += 1
+
             if orient:
                 got += 1
+                miss_streak = 0
                 shown = "med $%.2f ($%.2f-$%.2f, от %s)" % (
                     orient["price"], orient["ali_usd_low"], orient["ali_usd_high"], orient["ali_moq"])
             else:
-                shown = "\u2014 (нет товаров)"
-            print("  [%d/%d] %-40s | %s | %.0fс id=%s" % (i, len(rows), kw[:40], shown, dt, rid))
+                miss_streak += 1
+                shown = "\u2014 (нет товаров) [подряд %d]" % miss_streak
+            print("  [%d] %-38s | %s | id=%s" % (i, kw[:38], shown, rid))
+
+            # ДЕТЕКТОР КВОТЫ: серия отказов подряд -> квота кончилась, выходим
+            if miss_streak >= STOP_AFTER:
+                stopped = True
+                print("\n\u26d4 %d отказов подряд — похоже, квота Alibaba на наш IP исчерпана." % miss_streak)
+                print("   Останавливаюсь (это нормально). Следующий запуск продолжит, когда квота восстановится.")
+                break
+
             if i < len(rows):
-                time.sleep(GAP)
+                time.sleep(random.uniform(GAP_MIN, GAP_MAX))
     finally:
         cur.close()
         conn.close()
-    print("\nГотово: ориентир записан у %d из %d." % (got, len(rows)))
+
+    tag = "ОСТАНОВЛЕН по квоте" if stopped else "очередь пройдена"
+    print("\nИтог (%s): обработано %d, ориентир записан у %d." % (tag, processed, got))
 
 
 if __name__ == "__main__":
