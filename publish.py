@@ -113,7 +113,6 @@ SELECT id, lot_number, name, match_status, structured_spec, match_result,
 FROM tenders
 WHERE match_status IN ('FOUND_EXACT', 'FOUND_PARTIAL')
   AND is_closed = false
-  AND (deadline IS NULL OR deadline >= now())
 """
 
 INSERT_SQL = """
