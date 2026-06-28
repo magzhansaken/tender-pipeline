@@ -10,18 +10,24 @@ TenderView API — только чтение готовых лотов.
 import os
 import json
 import time
+import hashlib
+import secrets
+import hmac
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 
 import asyncpg
-from fastapi import FastAPI, Query, Response, HTTPException, Depends, Header
+from fastapi import FastAPI, Query, Response, HTTPException, Depends, Header, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
 STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
+OWNER_EMAIL = os.getenv("OWNER_EMAIL", "").strip().lower()  # email владельца для автозавода аккаунта
+SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))  # срок жизни сессии входа, дней
 LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
 WORKER_LOGS = [
     {"name": "Сверка с goszakup (новые+статусы)", "file": "daily_sync_loop.log", "schedule": "каждые 4 часа", "max_min": 290},
@@ -31,6 +37,71 @@ WORKER_LOGS = [
     {"name": "Wildberries (цены)",    "file": "wb_loop.log",      "schedule": "каждый час",           "max_min": 150},
     {"name": "Alibaba (ориентиры)",   "file": "alibaba_loop.log", "schedule": "каждые 30 мин",        "max_min": 120},
 ]
+
+
+# ─────────── Безопасность: хеширование паролей и токены сессий (stdlib) ───────────
+def hash_password(pw: str) -> str:
+    """scrypt-хеш пароля (memory-hard, стойкий). Формат: scrypt$<salt>$<hash>."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(pw.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=67108864)
+    return "scrypt$%s$%s" % (salt.hex(), dk.hex())
+
+
+def verify_password(pw: str, stored: str) -> bool:
+    try:
+        algo, salt_hex, dk_hex = stored.split("$")
+        if algo != "scrypt":
+            return False
+        salt = bytes.fromhex(salt_hex)
+        dk = hashlib.scrypt(pw.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=67108864)
+        return hmac.compare_digest(dk.hex(), dk_hex)
+    except Exception:
+        return False
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def _open_session(con, user_id: int) -> str:
+    """Создаёт сессию: возвращает токен клиенту, в базе хранит только его хеш."""
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
+    await con.execute(
+        "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1,$2,$3)",
+        _token_hash(token), user_id, expires
+    )
+    return token
+
+
+async def _init_auth(pool) -> None:
+    """Создаёт таблицы аккаунтов (идемпотентно) и заводит владельца из .env."""
+    async with pool.acquire() as con:
+        await con.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id            BIGSERIAL PRIMARY KEY,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role          TEXT NOT NULL DEFAULT 'client',
+                status        TEXT NOT NULL DEFAULT 'active',
+                created_at    TIMESTAMPTZ DEFAULT now(),
+                last_login    TIMESTAMPTZ
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                expires_at TIMESTAMPTZ NOT NULL
+            );
+        """)
+        await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
+        if OWNER_EMAIL and ADMIN_PASSWORD:
+            exists = await con.fetchval("SELECT 1 FROM users WHERE email=$1", OWNER_EMAIL)
+            if not exists:
+                await con.execute(
+                    "INSERT INTO users (email, password_hash, role) VALUES ($1,$2,'owner')",
+                    OWNER_EMAIL, hash_password(ADMIN_PASSWORD)
+                )
 
 
 async def _init_conn(con: asyncpg.Connection) -> None:
@@ -44,11 +115,116 @@ async def lifespan(app: FastAPI):
     app.state.pool = await asyncpg.create_pool(
         DATABASE_URL, min_size=2, max_size=10, command_timeout=15, init=_init_conn
     )
+    await _init_auth(app.state.pool)
     yield
     await app.state.pool.close()
 
 
 app = FastAPI(title="TenderView", lifespan=lifespan)
+
+
+# ─────────── Аккаунты и авторизация (Фаза 2.1) ───────────
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
+
+
+async def current_user(x_auth_token: str | None = Header(default=None)):
+    """Возвращает пользователя по токену сессии, либо None (не вошёл)."""
+    if not x_auth_token:
+        return None
+    async with app.state.pool.acquire() as con:
+        row = await con.fetchrow(
+            "SELECT u.id, u.email, u.role, u.status FROM sessions s "
+            "JOIN users u ON u.id = s.user_id "
+            "WHERE s.token_hash = $1 AND s.expires_at > now()", _token_hash(x_auth_token)
+        )
+    if not row or row["status"] != "active":
+        return None
+    return dict(row)
+
+
+async def require_user(user=Depends(current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется вход")
+    return user
+
+
+async def require_owner(user=Depends(current_user)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Требуется вход")
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Только для владельца")
+    return user
+
+
+def _valid_email(e: str) -> bool:
+    e = (e or "").strip()
+    return "@" in e and "." in e.split("@")[-1] and 3 <= len(e) <= 200
+
+
+@app.post("/api/auth/register")
+async def auth_register(c: Credentials):
+    email = (c.email or "").strip().lower()
+    if not _valid_email(email):
+        raise HTTPException(status_code=400, detail="Некорректный email")
+    if len(c.password or "") < 8:
+        raise HTTPException(status_code=400, detail="Пароль минимум 8 символов")
+    async with app.state.pool.acquire() as con:
+        if await con.fetchval("SELECT 1 FROM users WHERE email=$1", email):
+            raise HTTPException(status_code=409, detail="Пользователь с таким email уже есть")
+        uid = await con.fetchval(
+            "INSERT INTO users (email, password_hash, role) VALUES ($1,$2,'client') RETURNING id",
+            email, hash_password(c.password)
+        )
+        token = await _open_session(con, uid)
+    return {"token": token, "email": email, "role": "client"}
+
+
+@app.post("/api/auth/login")
+async def auth_login(c: Credentials):
+    email = (c.email or "").strip().lower()
+    async with app.state.pool.acquire() as con:
+        u = await con.fetchrow("SELECT id, password_hash, role, status FROM users WHERE email=$1", email)
+        if not u or not verify_password(c.password or "", u["password_hash"]):
+            raise HTTPException(status_code=401, detail="Неверный email или пароль")
+        if u["status"] != "active":
+            raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+        token = await _open_session(con, u["id"])
+        await con.execute("UPDATE users SET last_login=now() WHERE id=$1", u["id"])
+    return {"token": token, "email": email, "role": u["role"]}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(x_auth_token: str | None = Header(default=None)):
+    if x_auth_token:
+        async with app.state.pool.acquire() as con:
+            await con.execute("DELETE FROM sessions WHERE token_hash=$1", _token_hash(x_auth_token))
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def auth_me(user=Depends(require_user)):
+    return {"email": user["email"], "role": user["role"]}
+
+
+@app.post("/api/auth/change-password")
+async def auth_change_password(p: PasswordChange, user=Depends(require_user)):
+    if len(p.new_password or "") < 8:
+        raise HTTPException(status_code=400, detail="Новый пароль минимум 8 символов")
+    async with app.state.pool.acquire() as con:
+        u = await con.fetchrow("SELECT password_hash FROM users WHERE id=$1", user["id"])
+        if not verify_password(p.old_password or "", u["password_hash"]):
+            raise HTTPException(status_code=401, detail="Старый пароль неверен")
+        await con.execute("UPDATE users SET password_hash=$1 WHERE id=$2",
+                          hash_password(p.new_password), user["id"])
+        await con.execute("DELETE FROM sessions WHERE user_id=$1", user["id"])  # пере-логин везде
+    return {"ok": True, "note": "Пароль изменён, войдите заново"}
 
 SORTS = {
     "confidence": "confidence DESC NULLS LAST, updated_at DESC",
