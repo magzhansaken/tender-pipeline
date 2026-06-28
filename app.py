@@ -24,7 +24,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
 LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
 WORKER_LOGS = [
-    {"name": "Сбор с goszakup",      "file": "collect.log",      "schedule": "раз в сутки (≈21:00)", "max_min": 1560},
+    {"name": "Сбор с goszakup",      "file": "collect.log",      "schedule": "раз в сутки (≈21:00)", "max_min": 1740},
     {"name": "Загрузка в базу",       "file": "loader.log",       "schedule": "каждые 5 мин",         "max_min": 20},
     {"name": "Обработка (Оллама)",    "file": "ollama_loop.log",  "schedule": "каждые 10 мин",        "max_min": 35},
     {"name": "Поиск на площадках",    "file": "search_loop.log",  "schedule": "каждые 15 мин",        "max_min": 50},
