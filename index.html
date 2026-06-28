@@ -225,6 +225,7 @@ function specChips(arr, cls){
   return `<div class="chips">${arr.slice(0,12).map(x=>`<span class="chip ${cls}">${esc(x)}</span>`).join("")}</div>`;
 }
 
+function unitOf(u){ u=(u||"").trim(); return (!u || u.length>6) ? "ед." : u; }
 function priceBlock(it){
   if(it.margin==null && it.margin_pct==null && it.lot_price==null) return "";
   let s = "";
@@ -233,10 +234,11 @@ function priceBlock(it){
   if(it.margin!=null){
     const cls = it.margin>=0 ? "pos":"neg";
     const qty = it.quantity||0;
+    const u = unitOf(it.unit);
     if(qty>1 && it.margin_total!=null){
-      s += `· маржа <b class="${cls}">${money(it.margin)}/шт`;
+      s += `· маржа <b class="${cls}">${money(it.margin)}/${u}`;
       if(it.margin_pct!=null) s += ` (${Math.round(it.margin_pct)}%)`;
-      s += `</b> · итого <b class="${cls}">${money(it.margin_total)}</b> <span style="color:var(--faint)">за ${qty} шт</span>`;
+      s += `</b> · итого <b class="${cls}">${money(it.margin_total)}</b> <span style="color:var(--faint)">за ${qty} ${u}</span>`;
     }else{
       s += `· маржа <b class="${cls}">${money(it.margin)}`;
       if(it.margin_pct!=null) s += ` (${Math.round(it.margin_pct)}%)`;
@@ -283,6 +285,7 @@ function card(it){
         <span class="badge ${st.cls}">${esc(st.label)}</span>
       </div>
       ${found}
+      ${it.quantity ? `<div style="font-size:13px;color:var(--faint);margin-top:4px">Количество: <b>${(it.quantity).toLocaleString("ru-RU")} ${unitOf(it.unit)}</b></div>` : ""}
       <div class="row2">
         <div class="conf">
           <span class="lbl">уверенность</span>

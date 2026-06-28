@@ -174,8 +174,10 @@ class GoszakupParser:
                     total_price = float(price_match.group(1).replace(' ', '').replace(',', ''))
                     price_per_unit = total_price / quantity if quantity > 0 else total_price
                     
-                    # Колонка 5: Единица измерения
-                    unit = cells[5].text.strip() if len(cells) > 5 else "шт"
+                    # В таблице goszakup НЕТ колонки с единицей измерения:
+                    # cells[5] — это «Способ закупки» (всегда «Запрос ценовых
+                    # предложений»), а не ед.изм. Ставим нейтральное «ед.».
+                    unit = "ед."
                     
                     lot = Lot(
                         lot_number=lot_number,
