@@ -537,43 +537,54 @@ async function openLot(num){
 function closeLot(){ document.getElementById("lot-modal").classList.add("hidden"); }
 
 function renderLotDetail(d){
-  const mr = d.match_result || {};
-  const ss = d.structured_spec || {};
-  const attrs = (ss.attributes||[]).map(a=>((a.name||"")+" "+(a.op||"")+" "+(a.value||"")+" "+(a.unit||"")).trim()).filter(Boolean).join("; ");
-  let h = "<h2 style='margin:0 0 8px'>"+escHtml(d.name||"")+" <span class='hint'>"+escHtml(d.lot_number)+"</span></h2>";
-  h += badge(d.match_status) + (d.is_closed?" <span class='badge b-other'>закрыт</span>":"");
-  h += "<div class='kv'>"+
-    "<div class='k'>Заказчик</div><div>"+escHtml(d.customer||"—")+"</div>"+
-    "<div class='k'>Цена лота (за ед.)</div><div>"+(d.lot_price!=null?fmt(d.lot_price)+" ₸":"—")+"</div>"+
-    "<div class='k'>Количество</div><div>"+(d.quantity!=null?fmt(d.quantity)+" "+escHtml(d.unit||""):"—")+"</div>"+
-    "<div class='k'>Сумма лота</div><div>"+(d.lot_sum!=null?fmt(Math.round(d.lot_sum))+" ₸":"—")+"</div>"+
-    "<div class='k'>Этап</div><div>"+escHtml(d.stage||"—")+"</div>"+
-    "<div class='k'>Собран</div><div>"+(d.collected_at?ago(d.collected_at):"—")+"</div>"+
-  "</div>";
-  h += "<div class='dlbl'>Анкета (Оллама)</div>";
-  h += "<div class='kv'>"+
-    "<div class='k'>Тип товара</div><div>"+escHtml(ss.product_type||"—")+"</div>"+
-    "<div class='k'>Бренд</div><div>"+escHtml(ss.brand||"—")+(ss.brand_required?" <span class='hint'>(требуется)</span>":"")+"</div>"+
-    "<div class='k'>Характеристики</div><div>"+escHtml(attrs||"—")+"</div>"+
-    "<div class='k'>Поисковый запрос</div><div>"+escHtml(ss.search_query||"—")+"</div>"+
-  "</div>";
-  if(d.match_status && d.match_status!=="NOT_FOUND"){
-    h += "<div class='dlbl'>Найденный товар</div>";
+  const box = document.getElementById("lot-detail");
+  try{
+    d = d || {};
+    let mr = d.match_result;  if(!mr || typeof mr !== "object" || Array.isArray(mr)) mr = {};
+    let ss = d.structured_spec; if(!ss || typeof ss !== "object" || Array.isArray(ss)) ss = {};
+    let attrs = "";
+    if(Array.isArray(ss.attributes)){
+      attrs = ss.attributes.map(function(a){ a=a||{}; return ((a.name||"")+" "+(a.op||"")+" "+(a.value||"")+" "+(a.unit||"")).trim(); }).filter(Boolean).join("; ");
+    }
+    const num = (n)=> (n!=null && !isNaN(n)) ? Number(n).toLocaleString("ru-RU") : null;
+    let h = "<h2 style='margin:0 0 8px'>"+escHtml(d.name||"")+" <span class='hint'>"+escHtml(d.lot_number||"")+"</span></h2>";
+    h += badge(d.match_status) + (d.is_closed?" <span class='badge b-other'>закрыт</span>":"");
     h += "<div class='kv'>"+
-      "<div class='k'>Название</div><div>"+escHtml(mr.product_name||"—")+"</div>"+
-      "<div class='k'>Бренд / модель</div><div>"+escHtml((mr.brand||"—")+" / "+(mr.model||"—"))+"</div>"+
-      "<div class='k'>Цена</div><div>"+(mr.price!=null?escHtml(String(mr.price)):"—")+"</div>"+
-      "<div class='k'>Площадка</div><div>"+escHtml(mr.source_site||"—")+"</div>"+
-      "<div class='k'>Ссылка</div><div>"+(d.found_url?"<a href='"+escAttr(d.found_url)+"' target='_blank' style='color:#58a6ff'>открыть товар ↗</a>":"—")+"</div>"+
-      "<div class='k'>Уверенность</div><div>"+(mr.confidence!=null?escHtml(String(mr.confidence)):"—")+"</div>"+
+      "<div class='k'>Заказчик</div><div>"+escHtml(d.customer||"—")+"</div>"+
+      "<div class='k'>Цена лота (за ед.)</div><div>"+(num(d.lot_price)?num(d.lot_price)+" ₸":"—")+"</div>"+
+      "<div class='k'>Количество</div><div>"+(num(d.quantity)?num(d.quantity)+" "+escHtml(d.unit||""):"—")+"</div>"+
+      "<div class='k'>Сумма лота</div><div>"+(num(d.lot_sum)?num(Math.round(d.lot_sum))+" ₸":"—")+"</div>"+
+      "<div class='k'>Этап</div><div>"+escHtml(d.stage||"—")+"</div>"+
+      "<div class='k'>Собран</div><div>"+escHtml(d.collected_at||"—")+"</div>"+
     "</div>";
-    if(mr.reason){ h += "<div class='hint' style='margin-top:6px'>Причина: "+escHtml(mr.reason)+"</div>"; }
-  } else if(mr.reason){
-    h += "<div class='dlbl'>Почему не найдено</div><div class='hint'>"+escHtml(mr.reason)+"</div>";
+    h += "<div class='dlbl'>Анкета (Оллама)</div>";
+    h += "<div class='kv'>"+
+      "<div class='k'>Тип товара</div><div>"+escHtml(ss.product_type||"—")+"</div>"+
+      "<div class='k'>Бренд</div><div>"+escHtml(ss.brand||"—")+(ss.brand_required?" <span class='hint'>(требуется)</span>":"")+"</div>"+
+      "<div class='k'>Характеристики</div><div>"+escHtml(attrs||"—")+"</div>"+
+      "<div class='k'>Поисковый запрос</div><div>"+escHtml(ss.search_query||"—")+"</div>"+
+    "</div>";
+    if(d.match_status && d.match_status!=="NOT_FOUND"){
+      h += "<div class='dlbl'>Найденный товар</div>";
+      h += "<div class='kv'>"+
+        "<div class='k'>Название</div><div>"+escHtml(mr.product_name||"—")+"</div>"+
+        "<div class='k'>Бренд / модель</div><div>"+escHtml((mr.brand||"—")+" / "+(mr.model||"—"))+"</div>"+
+        "<div class='k'>Цена</div><div>"+(mr.price!=null?escHtml(String(mr.price)):"—")+"</div>"+
+        "<div class='k'>Площадка</div><div>"+escHtml(mr.source_site||"—")+"</div>"+
+        "<div class='k'>Ссылка</div><div>"+(d.found_url?"<a href='"+escAttr(d.found_url)+"' target='_blank' style='color:#58a6ff'>открыть товар ↗</a>":"—")+"</div>"+
+        "<div class='k'>Уверенность</div><div>"+(mr.confidence!=null?escHtml(String(mr.confidence)):"—")+"</div>"+
+      "</div>";
+      if(mr.reason){ h += "<div class='hint' style='margin-top:6px'>Причина: "+escHtml(String(mr.reason))+"</div>"; }
+    } else if(mr.reason){
+      h += "<div class='dlbl'>Почему не найдено</div><div class='hint'>"+escHtml(String(mr.reason))+"</div>";
+    }
+    h += "<div class='dlbl'>ТЗ (исходный текст)</div>";
+    h += "<div class='spec-box'>"+escHtml(d.raw_spec||"(нет)")+"</div>";
+    box.innerHTML = h;
+  }catch(e){
+    box.innerHTML = "<p class='err'>Ошибка отрисовки: "+escHtml(String(e))+"</p>"+
+      "<div class='spec-box'>"+escHtml(JSON.stringify(d,null,2))+"</div>";
   }
-  h += "<div class='dlbl'>ТЗ (исходный текст)</div>";
-  h += "<div class='spec-box'>"+escHtml(d.raw_spec||"(нет)")+"</div>";
-  document.getElementById("lot-detail").innerHTML = h;
 }
 
 </script>
