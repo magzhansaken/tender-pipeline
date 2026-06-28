@@ -13,12 +13,13 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 import asyncpg
-from fastapi import FastAPI, Query, Response, HTTPException
+from fastapi import FastAPI, Query, Response, HTTPException, Depends, Header
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
 STATIC_DIR = Path(__file__).parent / "static"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
 
 
 async def _init_conn(con: asyncpg.Connection) -> None:
@@ -145,6 +146,67 @@ async def healthz():
     async with pool.acquire() as con:
         await con.fetchval("SELECT 1")
     return {"ok": True}
+
+
+# ─────────── Админ-панель (за паролем ADMIN_PASSWORD из .env) ───────────
+
+def check_admin(x_admin_token: str | None = Header(default=None)):
+    """Простая защита: заголовок X-Admin-Token должен совпасть с ADMIN_PASSWORD.
+    Если пароль не задан в .env — доступ закрыт полностью (безопасно по умолчанию)."""
+    if not ADMIN_PASSWORD or x_admin_token != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Доступ запрещён")
+
+
+@app.get("/api/admin/health")
+async def admin_health(_: None = Depends(check_admin)):
+    """Здоровье пайплайна: воронка этапов (по живым тендерам) + свежесть данных."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        total = await con.fetchval("SELECT count(*) FROM tenders")
+        live = await con.fetchval("SELECT count(*) FROM tenders WHERE is_closed = false")
+        normalized = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed = false AND structured_spec IS NOT NULL"
+        )
+        searched = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed = false AND match_status IS NOT NULL"
+        )
+        found = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed = false "
+            "AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL')"
+        )
+        priced = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed = false "
+            "AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
+            "AND (match_result->>'price') IS NOT NULL"
+        )
+        published = await con.fetchval("SELECT count(*) FROM lots")
+        by_status = await con.fetch(
+            "SELECT COALESCE(match_status, '(не обработано)') AS s, count(*) AS c "
+            "FROM tenders WHERE is_closed = false GROUP BY 1 ORDER BY c DESC"
+        )
+        last_collected = await con.fetchval("SELECT max(collected_at) FROM tenders")
+        new_24h = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE collected_at > now() - interval '24 hours'"
+        )
+        last_published = await con.fetchval("SELECT max(updated_at) FROM lots")
+    return {
+        "funnel": {
+            "total": total or 0, "live": live or 0, "normalized": normalized or 0,
+            "searched": searched or 0, "found": found or 0,
+            "priced": priced or 0, "published": published or 0,
+        },
+        "by_status": {r["s"]: r["c"] for r in by_status},
+        "freshness": {
+            "last_collected": last_collected.isoformat() if last_collected else None,
+            "new_24h": new_24h or 0,
+            "last_published": last_published.isoformat() if last_published else None,
+        },
+    }
+
+
+@app.get("/admin")
+async def admin_page():
+    return FileResponse(str(STATIC_DIR / "admin.html"))
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
