@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тарифы — TenderFinder</title>
+<style>
+  :root{
+    --bg:#08090d; --surface:#11141b; --surface-2:#161b24; --raise:#1b212c;
+    --line:#1f2530; --line-2:#2a3340;
+    --ink:#f1f4f9; --muted:#98a4b3; --faint:#626d7c;
+    --teal:#2dd4bf; --teal-2:#10b981; --teal-ink:#5eead4; --teal-soft:#0e2c28; --teal-bd:#1d4f48;
+    --amber:#f5b54b; --amber-soft:#2a1f0c; --amber-bd:#5a431a;
+    --grad:linear-gradient(135deg,#2dd4bf 0%,#10b981 100%);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    --radius:18px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 22px}
+
+  .glow{position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(640px 440px at 50% -6%, rgba(45,212,191,.15), transparent 70%),
+      radial-gradient(720px 520px at 88% 6%, rgba(16,185,129,.07), transparent 70%);}
+  .wrap,.nav,.launch{position:relative;z-index:1}
+
+  /* launch banner */
+  .launch{background:linear-gradient(90deg,var(--amber-soft),transparent 70%);border-bottom:1px solid var(--amber-bd);
+    text-align:center;padding:10px 16px;font-size:13.5px;color:#f3d49a}
+  .launch b{color:#ffe2a6}
+  .launch .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-right:8px;
+    box-shadow:0 0 0 4px rgba(245,181,75,.18);vertical-align:middle;animation:pulse 1.8s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  /* nav */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:18px 0;max-width:1160px;margin:0 auto;padding-left:22px;padding-right:22px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:17px;letter-spacing:-.015em}
+  .brand .mark{width:31px;height:31px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center}
+  .brand .mark svg{width:17px;height:17px}
+  .nav-right{display:flex;align-items:center;gap:6px}
+  .nav-link{color:var(--muted);font-size:14px;padding:9px 13px;border-radius:10px}
+  .nav-link:hover{color:var(--ink)}
+  .nav-cta{border:1px solid var(--line-2);color:var(--ink);font-size:14px;font-weight:600;padding:9px 16px;border-radius:11px}
+  .nav-cta:hover{border-color:var(--teal)}
+
+  /* hero */
+  .hero{text-align:center;padding:50px 0 6px;animation:rise .6s ease both}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--teal-soft);color:var(--teal-ink);
+    border:1px solid var(--teal-bd);border-radius:999px;padding:7px 15px;font-size:13px;font-weight:600;margin-bottom:22px}
+  .eyebrow svg{width:15px;height:15px}
+  h1{font-size:clamp(30px,5vw,52px);line-height:1.05;letter-spacing:-.03em;margin:0 0 16px;font-weight:790}
+  h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lede{max-width:660px;margin:0 auto;color:var(--muted);font-size:18px;line-height:1.5}
+  .hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+  .btn-primary{background:var(--grad);color:#04130f;font-weight:700;font-size:15px;padding:13px 24px;border-radius:12px;border:none;cursor:pointer}
+  .btn-primary:hover{filter:brightness(1.07)}
+  .btn-ghost{border:1px solid var(--line-2);color:var(--ink);font-weight:600;font-size:15px;padding:13px 22px;border-radius:12px}
+  .btn-ghost:hover{border-color:var(--teal)}
+  .micro{margin-top:13px;color:var(--faint);font-size:13px}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;margin:38px 0 4px;animation:rise .6s .08s ease both}
+  @media(max-width:620px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--surface);padding:20px 16px;text-align:center}
+  .stat .n{font-size:24px;font-weight:780;letter-spacing:-.02em;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stat .l{color:var(--faint);font-size:12.5px;margin-top:4px}
+
+  /* toggle */
+  .toggle-row{display:flex;justify-content:center;align-items:center;gap:14px;margin:40px 0 6px}
+  .toggle{display:inline-flex;background:var(--surface);border:1px solid var(--line-2);border-radius:999px;padding:5px;position:relative}
+  .toggle button{border:none;background:none;font:inherit;font-size:14px;font-weight:600;color:var(--muted);
+    padding:9px 20px;border-radius:999px;cursor:pointer;position:relative;z-index:1;transition:color .2s}
+  .toggle button.on{color:#04130f}
+  .toggle .glider{position:absolute;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);background:var(--grad);
+    border-radius:999px;transition:transform .24s cubic-bezier(.4,0,.2,1)}
+  .toggle.year .glider{transform:translateX(100%)}
+  .save-pill{background:var(--teal-soft);color:var(--teal-ink);border:1px solid var(--teal-bd);
+    border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
+
+  /* cards */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:30px 0 10px;align-items:stretch}
+  @media(max-width:980px){.cards{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;
+    display:flex;flex-direction:column;position:relative;animation:rise .5s ease both}
+  .card:nth-child(1){animation-delay:.04s}.card:nth-child(2){animation-delay:.10s}
+  .card:nth-child(3){animation-delay:.16s}.card:nth-child(4){animation-delay:.22s}
+  .card.popular{
+    background:linear-gradient(var(--surface),var(--surface)) padding-box, var(--grad) border-box;
+    border:1.5px solid transparent;transform:translateY(-8px);
+    box-shadow:0 0 0 1px rgba(45,212,191,.08), 0 30px 70px -30px rgba(16,185,129,.55);}
+  @media(max-width:560px){.card.popular{transform:none}}
+  .pop-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--grad);color:#04130f;
+    font-size:11.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;padding:5px 13px;border-radius:999px;white-space:nowrap}
+  .pname{font-size:19px;font-weight:720;letter-spacing:-.015em}
+  .ptag{color:var(--faint);font-size:12.5px;margin-top:4px;min-height:34px}
+  .price{margin:14px 0 2px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;min-height:44px}
+  .price .num{font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1}
+  .price .per{color:var(--faint);font-size:14px;font-weight:500}
+  .price .req{font-size:24px;font-weight:760;letter-spacing:-.02em}
+  .price .old{color:var(--faint);text-decoration:line-through;font-size:16px;font-weight:600}
+  .price .off{background:var(--amber-soft);color:#f5c878;border:1px solid var(--amber-bd);border-radius:7px;
+    padding:2px 7px;font-size:11.5px;font-weight:700}
+  .subprice{color:var(--faint);font-size:12.5px;min-height:34px;line-height:1.4}
+  .subprice .save{color:var(--teal-ink);font-weight:600}
+  .cta{margin:18px 0 20px;text-align:center;font:inherit;font-size:14.5px;font-weight:680;padding:12px 16px;
+    border-radius:12px;cursor:pointer;border:1px solid var(--line-2);background:transparent;color:var(--ink);transition:.15s;display:block}
+  .cta:hover{border-color:var(--teal);color:var(--teal-ink)}
+  .card.popular .cta{background:var(--grad);color:#04130f;border-color:transparent}
+  .card.popular .cta:hover{filter:brightness(1.07)}
+  .feat{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  .feat li{display:flex;gap:10px;font-size:13.5px;color:var(--muted);line-height:1.45}
+  .feat li svg{width:17px;height:17px;flex:0 0 auto;margin-top:1px;color:var(--teal)}
+
+  /* assurance row */
+  .assure{display:flex;justify-content:center;flex-wrap:wrap;gap:10px 26px;margin:22px auto 6px;max-width:900px}
+  .assure span{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13.5px}
+  .assure svg{width:16px;height:16px;color:var(--teal);flex:0 0 auto}
+
+  /* differentiator banner */
+  .edge{margin:50px 0 12px;background:linear-gradient(120deg, rgba(45,212,191,.07), rgba(16,185,129,.03)), var(--surface);
+    border:1px solid var(--teal-bd);border-radius:var(--radius);padding:30px 28px;display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+  .edge .ico{width:54px;height:54px;border-radius:14px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .edge .ico svg{width:27px;height:27px;color:#04130f}
+  .edge .etxt{flex:1;min-width:240px}
+  .edge h2{font-size:21px;margin:0 0 5px;letter-spacing:-.015em;font-weight:720}
+  .edge p{margin:0;color:var(--muted);font-size:14.5px}
+
+  /* comparison */
+  .cmp{margin:54px 0 10px}
+  .cmp h2{text-align:center;font-size:24px;letter-spacing:-.02em;margin:0 0 6px;font-weight:740}
+  .cmp .csub{text-align:center;color:var(--muted);font-size:14.5px;margin:0 auto 26px;max-width:520px}
+  .ctable-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+  table.ctable{width:100%;border-collapse:collapse;min-width:640px}
+  table.ctable thead th{position:sticky;top:0;background:var(--surface-2);text-align:center;padding:16px 14px;
+    font-size:13.5px;font-weight:700;border-bottom:1px solid var(--line);z-index:2}
+  table.ctable thead th:first-child{text-align:left;color:var(--faint);font-weight:600}
+  table.ctable thead th.pop{color:var(--teal-ink)}
+  .ghead td{background:var(--raise);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700;padding:11px 14px}
+  .ghead.hot td{color:var(--teal-ink);background:linear-gradient(90deg,var(--teal-soft),transparent)}
+  table.ctable td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:13.5px;text-align:center;color:var(--muted)}
+  table.ctable td:first-child{text-align:left;color:var(--ink);font-weight:500}
+  table.ctable tr:last-child td{border-bottom:none}
+  .col-pop{background:rgba(45,212,191,.04)}
+  .ck{color:var(--teal);display:inline-flex}.ck svg{width:18px;height:18px}
+  .dash{color:#3b4451}
+  .cval{color:var(--ink);font-weight:600;font-size:12.5px}
+
+  /* faq */
+  .faq{margin:52px 0 16px;max-width:760px;margin-left:auto;margin-right:auto}
+  .faq h2{text-align:center;font-size:24px;letter-spacing:-.02em;margin:0 0 22px;font-weight:740}
+  .qa{border:1px solid var(--line);border-radius:13px;background:var(--surface);margin-bottom:11px;overflow:hidden}
+  .qa summary{list-style:none;cursor:pointer;padding:17px 19px;font-size:15px;font-weight:620;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .qa summary::-webkit-details-marker{display:none}
+  .qa summary .plus{color:var(--teal);font-size:20px;transition:transform .2s;flex:0 0 auto;line-height:1}
+  .qa[open] summary .plus{transform:rotate(45deg)}
+  .qa .ans{padding:0 19px 17px;color:var(--muted);font-size:14px;line-height:1.55}
+
+  /* closing cta */
+  .final{text-align:center;margin:56px 0 12px;padding:42px 28px;border:1px solid var(--teal-bd);border-radius:var(--radius);
+    background:linear-gradient(160deg, rgba(45,212,191,.08), rgba(16,185,129,.02)), var(--surface)}
+  .final h2{font-size:25px;letter-spacing:-.02em;margin:0 0 8px;font-weight:760}
+  .final p{color:var(--muted);font-size:15px;margin:0 auto 22px;max-width:480px}
+
+  footer{border-top:1px solid var(--line);margin-top:46px;padding:28px 0;color:var(--faint);font-size:13px;text-align:center}
+  footer .ref{color:var(--muted)}
+  .loading{text-align:center;color:var(--faint);padding:50px;grid-column:1/-1}
+
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  @media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+
+<div class="launch" id="launch" style="display:none">
+  <span class="dot"></span><b id="launch-txt">Цена основателя</b>
+</div>
+
+<nav class="nav">
+  <a href="/" class="brand">
+    <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#04130f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+    TenderFinder
+  </a>
+  <div class="nav-right">
+    <a href="/" class="nav-link">Витрина</a>
+    <a href="#compare" class="nav-link">Сравнить</a>
+    <a href="/login" class="nav-cta">Войти</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg>
+      Тендер сразу с ценой поставщика и маржой
+    </span>
+    <h1>Одна выигранная сделка<br>окупает <span class="g">год подписки</span></h1>
+    <p class="lede">Другие сервисы присылают список тендеров — поставщика и выгоду вы ищете сами. TenderFinder находит товар на маркетплейсе, берёт цену и считает маржу по каждому лоту. Вам остаётся выбрать выгодное и заработать.</p>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="/login?plan=start">Попробовать 14 дней бесплатно</a>
+      <a class="btn-ghost" href="#plans">Смотреть тарифы</a>
+    </div>
+    <div class="micro">Без карты · Отмена в любой момент</div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="n">4 900+</div><div class="l">живых тендеров</div></div>
+    <div class="stat"><div class="n">каждый час</div><div class="l">обновление витрины</div></div>
+    <div class="stat"><div class="n">по каждому лоту</div><div class="l">цена и маржа</div></div>
+    <div class="stat"><div class="n">14 дней</div><div class="l">бесплатно, без карты</div></div>
+  </div>
+
+  <div class="toggle-row" id="plans">
+    <div class="toggle" id="toggle">
+      <span class="glider"></span>
+      <button class="on" id="t-month" onclick="setPeriod('month')">Помесячно</button>
+      <button id="t-year" onclick="setPeriod('year')">На год</button>
+    </div>
+    <span class="save-pill">2 месяца в подарок при оплате за год</span>
+  </div>
+
+  <div class="cards" id="cards"><div class="loading">Загрузка тарифов…</div></div>
+
+  <div class="assure">
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>14 дней бесплатно, без карты</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/><path d="M9 12l2 2 4-4"/></svg>Возврат денег 14 дней</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Оплата Kaspi и картой</span>
+    <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Отмена в любой момент</span>
+  </div>
+
+  <section class="edge">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+    <div class="etxt">
+      <h2>Чего нет ни у одного конкурента</h2>
+      <p>Tenderbot, Zakupki, Setty и другие дают уведомления по ключевым словам — дальше вы сами ищете поставщика и считаете, выгодно ли. Мы делаем этот этап за вас: товар найден, цена взята, маржа посчитана, лоты отсортированы по прибыли. Подписка стоит меньше маржи с одной сделки.</p>
+    </div>
+  </section>
+
+  <section class="cmp" id="compare">
+    <h2>Сравнение тарифов</h2>
+    <p class="csub">Карточки выше — короткое сравнение. Здесь — все возможности по пунктам.</p>
+    <div class="ctable-wrap">
+      <table class="ctable" id="ctable"><tbody><tr><td class="loading">Загрузка…</td></tr></tbody></table>
+    </div>
+  </section>
+
+  <section class="faq">
+    <h2>Частые вопросы</h2>
+    <details class="qa"><summary>Чем это лучше обычного поиска по тендерам?<span class="plus">+</span></summary><div class="ans">Обычные сервисы показывают тендер и оставляют вас искать поставщика и считать выгоду самому. Мы делаем это за вас: товар найден на маркетплейсе, цена взята, маржа посчитана. Вы сразу видите, на каких лотах можно заработать.</div></details>
+    <details class="qa"><summary>Как работает бесплатный период?<span class="plus">+</span></summary><div class="ans">При регистрации вы получаете 14 дней полного доступа — с ценами поставщиков и маржой — без привязки карты. Понравится — выбираете тариф, нет — просто перестаёте пользоваться.</div></details>
+    <details class="qa"><summary>Что за «цена основателя»?<span class="plus">+</span></summary><div class="ans">Первые 50 клиентов закрепляют сниженную цену навсегда — она не вырастет, пока вы пользуетесь сервисом. Это благодарность тем, кто с нами с самого старта. Количество мест ограничено.</div></details>
+    <details class="qa"><summary>А если не окупится?<span class="plus">+</span></summary><div class="ans">Возврат денег в течение 14 дней после оплаты — без вопросов. Мы уверены в продукте: одна выигранная сделка обычно приносит больше, чем годовая подписка.</div></details>
+    <details class="qa"><summary>Как оплатить и какие площадки вы охватываете?<span class="plus">+</span></summary><div class="ans">Оплата картой или через Kaspi. Тендеры собираем с goszakup.gov.kz; цены поставщиков подбираем на Kaspi, Satu, Chipdip, Alibaba, Wildberries и других маркетплейсах — и берём лучшую.</div></details>
+    <details class="qa"><summary>Можно ли сменить тариф позже?<span class="plus">+</span></summary><div class="ans">Да, в любой момент. При повышении тарифа доступ откроется сразу, срок пересчитается с новой даты.</div></details>
+  </section>
+
+  <section class="final">
+    <h2>Начните находить выгодные тендеры сегодня</h2>
+    <p>14 дней полного доступа бесплатно. Без карты. Дальше — закрепите цену основателя.</p>
+    <a class="btn-primary" href="/login?plan=start">Попробовать 14 дней бесплатно</a>
+  </section>
+</div>
+
+<footer>
+  <div class="ref">Приведите поставщика — получите месяц бесплатно.</div>
+  © <span id="yr"></span> TenderFinder · Автоматический поиск выгодных тендеров в Казахстане
+</footer>
+
+<script>
+let period = "month";
+let PLANS = [];
+let PROMO = {active:false};
+const KEYS = ["free","start","business","team"];
+
+const DEFAULT_PLANS=[
+ {key:"free",name:"Демо",monthly:0,annual:0,tagline:"Осмотреться и оценить",features:["Витрина тендеров с goszakup.gov.kz","14 дней полного доступа при регистрации","Дальше — цена и маржа скрыты"],highlight:false,cta:"Попробовать 14 дней"},
+ {key:"start",name:"Старт",monthly:14900,annual:149000,promo_monthly:8900,promo_annual:89000,tagline:"Частным поставщикам и ИП",features:["Все тендеры с goszakup.gov.kz","Цена поставщика по каждому лоту","Маржа рассчитана автоматически","Лоты отсортированы по выгоде","Поиск, фильтры и уведомления"],highlight:true,cta:"Попробовать бесплатно"},
+ {key:"business",name:"Бизнес",monthly:39900,annual:399000,promo_monthly:24900,promo_annual:249000,tagline:"Отделам закупок и компаниям",features:["Всё из тарифа «Старт»","До 3 пользователей в аккаунте","Выгрузка лотов в Excel","Расширенная история тендеров","Приоритетная поддержка"],highlight:false,cta:"Попробовать бесплатно"},
+ {key:"team",name:"Под ключ",monthly:null,annual:null,tagline:"Агентствам и крупным игрокам",features:["Всё из тарифа «Бизнес»","Доступ к API и безлимит пользователей","Помощь в подготовке и подаче заявок","Персональный менеджер","Индивидуальные условия"],highlight:false,cta:"Связаться с нами"}
+];
+const DEFAULT_PROMO={active:true,label:"Цена основателя",note:"первым 50 клиентам — навсегда",seats_left:50,percent:40};
+
+function fmt(n){ return Number(n).toLocaleString("ru-RU"); }
+const FCHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const CHECK='<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>';
+
+const MATRIX = [
+  {group:"Поиск и витрина", rows:[
+    {label:"Тендеры с goszakup.gov.kz", v:{free:true,start:true,business:true,team:true}},
+    {label:"Лотов на витрине", v:{free:"10",start:"Все",business:"Все",team:"Все"}},
+    {label:"Поиск и фильтры по витрине", v:{free:false,start:true,business:true,team:true}},
+    {label:"История тендеров", v:{free:false,start:"30 дней",business:"Расширенная",team:"Полная"}},
+  ]},
+  {group:"Цена и маржа — только у нас", hot:true, rows:[
+    {label:"Цена поставщика по каждому лоту", v:{free:false,start:true,business:true,team:true}},
+    {label:"Маржа рассчитана автоматически", v:{free:false,start:true,business:true,team:true}},
+    {label:"Сортировка лотов по выгоде", v:{free:false,start:true,business:true,team:true}},
+  ]},
+  {group:"Уведомления и выгрузка", rows:[
+    {label:"Уведомления о новых тендерах", v:{free:false,start:true,business:true,team:true}},
+    {label:"Выгрузка лотов в Excel", v:{free:false,start:false,business:true,team:true}},
+    {label:"Доступ к API", v:{free:false,start:false,business:false,team:true}},
+  ]},
+  {group:"Команда и поддержка", rows:[
+    {label:"Пользователей в аккаунте", v:{free:"1",start:"1",business:"до 3",team:"Несколько"}},
+    {label:"Помощь с подачей заявок", v:{free:false,start:false,business:false,team:true}},
+    {label:"Поддержка", v:{free:"—",start:"Email",business:"Приоритетная",team:"Менеджер"}},
+  ]},
+];
+
+function setPeriod(p){
+  period = p;
+  document.getElementById("toggle").classList.toggle("year", p==="year");
+  document.getElementById("t-month").classList.toggle("on", p==="month");
+  document.getElementById("t-year").classList.toggle("on", p==="year");
+  renderCards();
+}
+
+function priceBlock(p){
+  if(p.monthly === null)
+    return '<div class="price"><span class="req">По запросу</span></div><div class="subprice">индивидуальные условия под ваши задачи</div>';
+  if(p.monthly === 0)
+    return '<div class="price"><span class="num">0 ₸</span></div><div class="subprice">демо-доступ + 14 дней полного</div>';
+
+  const promoOn = PROMO.active && p.promo_annual;
+  const annual  = promoOn ? p.promo_annual  : p.annual;
+  const monthly = promoOn ? p.promo_monthly : p.monthly;
+
+  if(period === "year"){
+    const perMo = Math.round(annual/12);
+    let head = '<div class="price"><span class="num">'+fmt(annual)+'</span><span class="per">₸ / год</span>';
+    if(promoOn) head += '<span class="old">'+fmt(p.annual)+'</span><span class="off">−'+PROMO.percent+'%</span>';
+    head += '</div>';
+    const sub = promoOn
+      ? '<div class="subprice">≈ '+fmt(perMo)+' ₸ в месяц<br><span class="save">'+PROMO.label+' — навсегда</span></div>'
+      : '<div class="subprice">≈ '+fmt(perMo)+' ₸ в месяц<br><span class="save">экономия '+fmt(p.monthly*12-p.annual)+' ₸</span></div>';
+    return head + sub;
+  }
+  let head = '<div class="price"><span class="num">'+fmt(monthly)+'</span><span class="per">₸ / мес</span>';
+  if(promoOn) head += '<span class="old">'+fmt(p.monthly)+'</span><span class="off">−'+PROMO.percent+'%</span>';
+  head += '</div>';
+  const sub = promoOn
+    ? '<div class="subprice"><span class="save">'+PROMO.label+'</span> · оплата помесячно</div>'
+    : '<div class="subprice">при оплате помесячно</div>';
+  return head + sub;
+}
+
+function renderCards(){
+  const box = document.getElementById("cards");
+  if(!PLANS.length){ box.innerHTML = '<div class="loading">Тарифы временно недоступны.</div>'; return; }
+  box.innerHTML = PLANS.map(p=>{
+    const feats = (p.features||[]).map(f=>'<li>'+FCHECK+'<span>'+f+'</span></li>').join("");
+    return '<div class="card'+(p.highlight?' popular':'')+'">'+
+      (p.highlight?'<span class="pop-badge">Популярный</span>':'')+
+      '<div class="pname">'+p.name+'</div>'+
+      '<div class="ptag">'+(p.tagline||'')+'</div>'+
+      priceBlock(p)+
+      '<a class="cta" href="/login?plan='+p.key+'">'+(p.cta||'Выбрать')+'</a>'+
+      '<ul class="feat">'+feats+'</ul>'+
+    '</div>';
+  }).join("");
+}
+
+function cell(val, pop){
+  let inner;
+  if(val === true) inner = CHECK;
+  else if(val === false) inner = '<span class="dash">—</span>';
+  else inner = '<span class="cval">'+val+'</span>';
+  return '<td class="'+(pop?'col-pop':'')+'">'+inner+'</td>';
+}
+
+function renderTable(){
+  const names = {}; PLANS.forEach(p=>names[p.key]=p);
+  const order = KEYS.filter(k=>names[k]);
+  let h = '<thead><tr><th></th>'+order.map(k=>
+    '<th class="'+(names[k].highlight?'pop':'')+'">'+names[k].name+'</th>').join("")+'</tr></thead><tbody>';
+  MATRIX.forEach(g=>{
+    h += '<tr class="ghead'+(g.hot?' hot':'')+'"><td colspan="'+(order.length+1)+'">'+g.group+'</td></tr>';
+    g.rows.forEach(r=>{
+      h += '<tr><td>'+r.label+'</td>'+order.map(k=>cell(r.v[k], names[k].highlight)).join("")+'</tr>';
+    });
+  });
+  h += '</tbody>';
+  document.getElementById("ctable").innerHTML = h;
+}
+
+function renderPromo(){
+  if(!PROMO.active) return;
+  const el = document.getElementById("launch");
+  document.getElementById("launch-txt").innerHTML =
+    PROMO.label+' — '+PROMO.note+'. Осталось '+PROMO.seats_left+' мест.';
+  el.style.display = "block";
+}
+
+async function load(){
+  try{
+    const r = await fetch("/api/plans");
+    if(!r.ok) throw 0;
+    const d = await r.json();
+    PLANS = d.plans || []; PROMO = d.promo || {active:false};
+    if(!PLANS.length) throw 0;
+  }catch(e){ PLANS = DEFAULT_PLANS; PROMO = DEFAULT_PROMO; }  // открыли файл локально — показываем дизайн
+  renderPromo();
+  renderCards();
+  if(PLANS.length) renderTable();
+}
+
+document.getElementById("yr").textContent = new Date().getFullYear();
+load();
+</script>
+</body>
+</html>

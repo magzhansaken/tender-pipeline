@@ -134,6 +134,14 @@
   .b-notfound{background:#3a1d1d;color:#f87171}
   .b-other{background:#222c3a;color:#9aa7b8}
   .b-owner{background:#1c2c44;color:#79b8ff}
+  .b-paid{background:#10342e;color:#2dd4bf}
+  .subtle{color:var(--faint);font-size:10.5px;margin-top:3px}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+  .btn-plan{background:#10342e;color:#2dd4bf;border-color:#1f5f56}
+  .btn-plan:hover{background:#143f37}
+  .plan-lbl{display:block;font-size:12px;color:var(--faint);margin:10px 0 5px;font-weight:600}
+  .plan-input{width:100%;background:var(--bg);border:1px solid var(--line-2);color:var(--ink);
+    border-radius:9px;padding:10px 11px;font:inherit;font-size:14px}
   .lots-meta{color:var(--faint);font-size:12px;margin-bottom:10px}
   .pager{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:16px}
   .pager .btn[disabled]{opacity:.4}
@@ -201,6 +209,7 @@
     </nav>
     <div class="sidebar-foot">
       <div class="who" id="whoEmail"></div>
+      <a href="/pricing" target="_blank">Тарифы ↗</a>
       <a href="/">← На витрину</a>
       <button onclick="logout()">Выйти</button>
     </div>
@@ -309,6 +318,28 @@
   <div class="modal-box">
     <button class="modal-x" onclick="closeLot()">✕</button>
     <div id="lot-detail"></div>
+  </div>
+</div>
+
+<!-- МОДАЛКА ТАРИФА -->
+<div id="plan-modal" class="modal hidden" onclick="if(event.target===this)closePlanModal()">
+  <div class="modal-box" style="max-width:420px">
+    <button class="modal-x" onclick="closePlanModal()">✕</button>
+    <h2 style="margin:0 0 4px;font-size:17px">Назначить тариф</h2>
+    <p class="hint" style="margin:0 0 18px">Аккаунт: <b id="plan-email"></b></p>
+    <label class="plan-lbl">Тариф</label>
+    <select id="plan-select" class="plan-input"></select>
+    <label class="plan-lbl">Период</label>
+    <select id="plan-period" class="plan-input">
+      <option value="month">1 месяц</option>
+      <option value="year">1 год</option>
+    </select>
+    <p class="hint" style="margin:4px 0 16px">Срок добавится к текущему. Тариф «Демо» сбрасывает подписку.</p>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn" id="plan-save" onclick="savePlan()" style="background:var(--accent-soft);color:var(--accent);border-color:var(--accent)">Сохранить</button>
+      <button class="btn ghost" onclick="closePlanModal()">Отмена</button>
+      <span class="hint" id="plan-msg"></span>
+    </div>
   </div>
 </div>
 
@@ -699,32 +730,43 @@ async function loadClients(){
 function statCard(label, val, color){
   return "<div class='card'><div class='lbl'>"+label+"</div><div class='val'"+(color?" style='color:"+color+"'":"")+">"+fmt(val||0)+"</div></div>";
 }
+function planBadge(c){
+  if(!c.plan || c.plan==="free") return "<span class='badge b-other'>Демо</span>";
+  const exp = c.plan_expires_at ? new Date(c.plan_expires_at) : null;
+  const expired = exp && exp < new Date();
+  const cls = expired ? "b-notfound" : "b-paid";
+  let s = "<span class='badge "+cls+"'>"+escHtml(c.plan_name||c.plan)+"</span>";
+  if(exp){ s += "<div class='subtle'>"+(expired?"истёк ":"до ")+fmtDate(c.plan_expires_at)+"</div>"; }
+  return s;
+}
 function renderClients(d){
   const s = d.stats || {};
   document.getElementById("client-stats").innerHTML =
     statCard("Всего клиентов", s.clients) +
+    statCard("Платных подписок", s.paid, (s.paid>0?"var(--teal)":null)) +
     statCard("Активных", s.active, "var(--green)") +
-    statCard("Заблокировано", s.blocked, (s.blocked>0?"var(--red)":null)) +
-    statCard("Новых за 7 дней", s.new_7d, "var(--teal)");
+    statCard("Заблокировано", s.blocked, (s.blocked>0?"var(--red)":null));
   document.getElementById("clients-meta").textContent = "Найдено "+fmt(d.total)+" аккаунтов · страница "+d.page+" из "+(d.pages||1);
   const tbl = document.getElementById("clients-table");
   if(!d.clients || !d.clients.length){ tbl.innerHTML="<p class='hint'>Ничего не найдено.</p>"; document.getElementById("clients-pager").innerHTML=""; return; }
-  let h = "<table class='lots'><thead><tr><th>Email</th><th>Роль</th><th>Статус</th><th>Регистрация</th><th>Последний вход</th><th></th></tr></thead><tbody>";
+  let h = "<table class='lots'><thead><tr><th>Email</th><th>Роль</th><th>Тариф</th><th>Статус</th><th>Регистрация</th><th></th></tr></thead><tbody>";
   d.clients.forEach(c=>{
     const roleB = c.role==="owner" ? "<span class='badge b-owner'>владелец</span>" : "<span class='badge b-other'>клиент</span>";
     const statB = c.status==="active" ? "<span class='badge b-exact'>активен</span>" : "<span class='badge b-notfound'>заблокирован</span>";
     let action = "";
     if(c.role!=="owner"){
-      action = c.status==="active"
+      const planBtn = "<button class='btn-sm btn-plan' onclick=\"openPlanModal("+c.id+",'"+escAttr(c.email)+"','"+(c.plan||'free')+"')\">Тариф</button>";
+      const blockBtn = c.status==="active"
         ? "<button class='btn-sm btn-danger' onclick=\"blockClient("+c.id+",this)\">Заблокировать</button>"
         : "<button class='btn-sm btn-ok' onclick=\"unblockClient("+c.id+",this)\">Разблокировать</button>";
+      action = "<div class='row-actions'>"+planBtn+blockBtn+"</div>";
     }
     h += "<tr>"+
       "<td>"+escHtml(c.email)+"</td>"+
       "<td>"+roleB+"</td>"+
+      "<td>"+planBadge(c)+"</td>"+
       "<td>"+statB+"</td>"+
       "<td>"+fmtDate(c.created_at)+"</td>"+
-      "<td>"+(c.last_login?ago(c.last_login):"—")+"</td>"+
       "<td style='text-align:right'>"+action+"</td>"+
     "</tr>";
   });
@@ -734,6 +776,44 @@ function renderClients(d){
   pg += "<span class='hint'>"+d.page+" / "+(d.pages||1)+"</span>";
   pg += "<button class='btn' "+(d.page>=d.pages?"disabled":"")+" onclick='clientsPage="+(d.page+1)+";loadClients()'>Вперёд →</button>";
   document.getElementById("clients-pager").innerHTML = pg;
+}
+
+// ── Назначение тарифа (Фаза 2.3) ──
+let PLAN_LIST = null;
+async function ensurePlans(){
+  if(PLAN_LIST) return PLAN_LIST;
+  try{ const r = await fetch("/api/plans"); PLAN_LIST = (await r.json()).plans || []; }
+  catch(e){ PLAN_LIST = []; }
+  return PLAN_LIST;
+}
+let planTarget = null;
+async function openPlanModal(id, email, current){
+  planTarget = id;
+  const plans = await ensurePlans();
+  document.getElementById("plan-email").textContent = email;
+  const sel = document.getElementById("plan-select");
+  sel.innerHTML = plans.map(p=>"<option value='"+p.key+"'"+(p.key===current?" selected":"")+">"+escHtml(p.name)+"</option>").join("");
+  document.getElementById("plan-period").value = "month";
+  document.getElementById("plan-msg").textContent = "";
+  document.getElementById("plan-modal").classList.remove("hidden");
+}
+function closePlanModal(){ document.getElementById("plan-modal").classList.add("hidden"); }
+async function savePlan(){
+  if(planTarget==null) return;
+  const plan = document.getElementById("plan-select").value;
+  const period = document.getElementById("plan-period").value;
+  const btn = document.getElementById("plan-save");
+  btn.disabled = true; document.getElementById("plan-msg").textContent = "Сохраняем…";
+  try{
+    const r = await fetch("/api/admin/client/"+planTarget+"/plan", {
+      method:"POST",
+      headers:{"X-Admin-Token": token, "Content-Type":"application/json"},
+      body: JSON.stringify({plan: plan, period: period})
+    });
+    if(!r.ok){ const e=await r.json().catch(()=>({})); document.getElementById("plan-msg").textContent = e.detail||"Ошибка"; btn.disabled=false; return; }
+    closePlanModal(); loadClients();
+  }catch(e){ document.getElementById("plan-msg").textContent = "Ошибка соединения"; }
+  btn.disabled = false;
 }
 async function blockClient(id, btn){
   if(!confirm("Заблокировать этот аккаунт? Активные сессии будут завершены.")) return;

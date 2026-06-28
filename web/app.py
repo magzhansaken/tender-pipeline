@@ -28,6 +28,73 @@ STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "").strip().lower()  # email владельца для автозавода аккаунта
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))  # срок жизни сессии входа, дней
+
+# ─────────── Тарифы и продающая модель (Фаза 2.3) — единый источник правды ───────────
+# Стратегия: продаём не «доступ к тендерам», а ГОТОВУЮ ПРИБЫЛЬ — тендер сразу с ценой
+# поставщика и рассчитанной маржой (чего нет ни у одного конкурента в мире).
+# Годовая цена = ×10 от месячной (2 месяца в подарок). promo_* — «цена основателя»
+# для первых N клиентов. Валюта — тенге.
+PLANS = {
+    "free": {
+        "name": "Демо", "monthly": 0, "annual": 0,
+        "tagline": "Осмотреться и оценить",
+        "features": [
+            "Витрина тендеров с goszakup.gov.kz",
+            "14 дней полного доступа при регистрации",
+            "Дальше — цена и маржа скрыты",
+        ],
+        "highlight": False, "cta": "Попробовать 14 дней",
+    },
+    "start": {
+        "name": "Старт", "monthly": 14900, "annual": 149000,
+        "promo_monthly": 8900, "promo_annual": 89000,
+        "tagline": "Частным поставщикам и ИП",
+        "features": [
+            "Все тендеры с goszakup.gov.kz",
+            "Цена поставщика по каждому лоту",
+            "Маржа рассчитана автоматически",
+            "Лоты отсортированы по выгоде",
+            "Поиск, фильтры и уведомления",
+        ],
+        "highlight": True, "cta": "Попробовать бесплатно",
+    },
+    "business": {
+        "name": "Бизнес", "monthly": 39900, "annual": 399000,
+        "promo_monthly": 24900, "promo_annual": 249000,
+        "tagline": "Отделам закупок и компаниям",
+        "features": [
+            "Всё из тарифа «Старт»",
+            "До 3 пользователей в аккаунте",
+            "Выгрузка лотов в Excel",
+            "Расширенная история тендеров",
+            "Приоритетная поддержка",
+        ],
+        "highlight": False, "cta": "Попробовать бесплатно",
+    },
+    "team": {
+        "name": "Под ключ", "monthly": None, "annual": None,
+        "tagline": "Агентствам и крупным игрокам",
+        "features": [
+            "Всё из тарифа «Бизнес»",
+            "Доступ к API и безлимит пользователей",
+            "Помощь в подготовке и подаче заявок",
+            "Персональный менеджер",
+            "Индивидуальные условия",
+        ],
+        "highlight": False, "cta": "Связаться с нами",
+    },
+}
+PLAN_ORDER = ["free", "start", "business", "team"]
+
+# Запуск: «цена основателя» — рычаг срочности для первых клиентов (pre-revenue).
+PROMO = {
+    "active": True,
+    "label": "Цена основателя",
+    "note": "первым 50 клиентам — навсегда",
+    "seats_left": 50,
+    "percent": 40,
+}
+
 LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
 WORKER_LOGS = [
     {"name": "Сверка с goszakup (новые+статусы)", "file": "daily_sync_loop.log", "schedule": "каждые 4 часа", "max_min": 290},
@@ -92,6 +159,22 @@ async def _init_auth(pool) -> None:
                 user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 created_at TIMESTAMPTZ DEFAULT now(),
                 expires_at TIMESTAMPTZ NOT NULL
+            );
+        """)
+        # подписки (Фаза 2.3) — храним прямо в users + журнал платежей
+        await con.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS plan            TEXT DEFAULT 'free';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_started_at TIMESTAMPTZ;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ;
+            CREATE TABLE IF NOT EXISTS payments (
+                id         BIGSERIAL PRIMARY KEY,
+                user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                plan       TEXT NOT NULL,
+                period     TEXT NOT NULL,                 -- 'month' | 'year'
+                amount     INTEGER NOT NULL DEFAULT 0,    -- в тенге
+                method     TEXT NOT NULL DEFAULT 'manual',-- manual | kaspi | card | ...
+                status     TEXT NOT NULL DEFAULT 'paid',  -- paid | pending | failed
+                created_at TIMESTAMPTZ DEFAULT now()
             );
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
@@ -643,12 +726,15 @@ async def admin_clients(
               count(*) FILTER (WHERE role='client')                                          AS clients,
               count(*) FILTER (WHERE role='client' AND status='active')                      AS active,
               count(*) FILTER (WHERE status='blocked')                                       AS blocked,
-              count(*) FILTER (WHERE role='client' AND created_at > now()-interval '7 days') AS new_7d
+              count(*) FILTER (WHERE role='client' AND created_at > now()-interval '7 days') AS new_7d,
+              count(*) FILTER (WHERE role='client' AND plan IS DISTINCT FROM 'free'
+                               AND (plan_expires_at IS NULL OR plan_expires_at > now()))     AS paid
             FROM users
         """)
         offset = (page - 1) * per_page
         rows = await con.fetch(
-            f"SELECT id, email, role, status, created_at, last_login FROM users{where} "
+            f"SELECT id, email, role, status, created_at, last_login, plan, plan_expires_at "
+            f"FROM users{where} "
             f"ORDER BY created_at DESC NULLS LAST LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
             *args, per_page, offset,
         )
@@ -660,9 +746,13 @@ async def admin_clients(
         "stats": {
             "clients": stats["clients"], "active": stats["active"],
             "blocked": stats["blocked"], "new_7d": stats["new_7d"],
+            "paid": stats["paid"],
         },
         "clients": [{
             "id": r["id"], "email": r["email"], "role": r["role"], "status": r["status"],
+            "plan": r["plan"] or "free",
+            "plan_name": PLANS.get(r["plan"] or "free", {}).get("name", r["plan"]),
+            "plan_expires_at": r["plan_expires_at"].isoformat() if r["plan_expires_at"] else None,
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "last_login": r["last_login"].isoformat() if r["last_login"] else None,
         } for r in rows],
@@ -689,6 +779,60 @@ async def admin_client_unblock(uid: int, _: None = Depends(check_admin)):
             raise HTTPException(status_code=404, detail="Аккаунт не найден")
         await con.execute("UPDATE users SET status='active' WHERE id=$1", uid)
     return {"ok": True, "status": "active"}
+
+
+# ─────────── Подписки и тарифы (Фаза 2.3) ───────────
+@app.get("/api/plans")
+async def public_plans():
+    """Витрина тарифов — публичный эндпоинт для страницы /pricing."""
+    return {"plans": [{"key": k, **PLANS[k]} for k in PLAN_ORDER], "promo": PROMO}
+
+
+class SetPlanBody(BaseModel):
+    plan: str
+    period: str = "month"      # 'month' | 'year'
+    months: int | None = None  # необязательно: точное число месяцев
+
+
+@app.post("/api/admin/client/{uid}/plan")
+async def admin_set_plan(uid: int, body: SetPlanBody, _: None = Depends(check_admin)):
+    """Владелец вручную назначает клиенту тариф (оплата приходит позже через эквайринг)."""
+    if body.plan not in PLANS:
+        raise HTTPException(status_code=400, detail="Неизвестный тариф")
+    period = body.period if body.period in ("month", "year") else "month"
+    months = body.months if body.months else (12 if period == "year" else 1)
+
+    async with app.state.pool.acquire() as con:
+        u = await con.fetchrow("SELECT id, plan, plan_expires_at FROM users WHERE id=$1", uid)
+        if not u:
+            raise HTTPException(status_code=404, detail="Аккаунт не найден")
+
+        if body.plan == "free":
+            await con.execute(
+                "UPDATE users SET plan='free', plan_started_at=NULL, plan_expires_at=NULL WHERE id=$1", uid)
+            return {"ok": True, "plan": "free", "plan_expires_at": None}
+
+        # продлеваем от большей из дат: сейчас или текущий конец подписки
+        base = "GREATEST(now(), COALESCE(plan_expires_at, now()))"
+        new_exp = await con.fetchval(
+            f"UPDATE users SET plan=$1, "
+            f"plan_started_at=COALESCE(plan_started_at, now()), "
+            f"plan_expires_at={base} + ($2::int * INTERVAL '1 month') "
+            f"WHERE id=$3 RETURNING plan_expires_at",
+            body.plan, months, uid)
+
+        amount = (PLANS[body.plan].get("annual") if period == "year" else PLANS[body.plan].get("monthly")) or 0
+        await con.execute(
+            "INSERT INTO payments (user_id, plan, period, amount, method, status) "
+            "VALUES ($1,$2,$3,$4,'manual','paid')",
+            uid, body.plan, period, amount)
+    return {"ok": True, "plan": body.plan,
+            "plan_expires_at": new_exp.isoformat() if new_exp else None}
+
+
+@app.get("/pricing")
+async def pricing_page():
+    return FileResponse(str(STATIC_DIR / "pricing.html"))
 
 
 @app.get("/login")
