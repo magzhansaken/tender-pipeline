@@ -885,13 +885,108 @@ async def admin_set_plan(uid: int, body: SetPlanBody, _: None = Depends(check_ad
             f"WHERE id=$3 RETURNING plan_expires_at",
             body.plan, months, uid)
 
-        amount = (PLANS[body.plan].get("annual") if period == "year" else PLANS[body.plan].get("monthly")) or 0
+        p = PLANS[body.plan]
+        if PROMO.get("active") and "promo_annual" in p:
+            amount = (p["promo_annual"] if period == "year" else p["promo_monthly"]) or 0
+        else:
+            amount = (p.get("annual") if period == "year" else p.get("monthly")) or 0
         await con.execute(
             "INSERT INTO payments (user_id, plan, period, amount, method, status) "
             "VALUES ($1,$2,$3,$4,'manual','paid')",
             uid, body.plan, period, amount)
     return {"ok": True, "plan": body.plan,
             "plan_expires_at": new_exp.isoformat() if new_exp else None}
+
+
+@app.get("/api/admin/business")
+async def admin_business(_: None = Depends(check_admin)):
+    """Бизнес-аналитика владельца: MRR/ARR/ARPU/отток/LTV + выручка и лента оплат.
+    MRR считаем с реальных оплат: годовые нормируем к месяцу (annual/12)."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        # активные платные подписчики + их ПОСЛЕДНИЙ платёж (для MRR)
+        active = await con.fetch("""
+            WITH latest AS (
+              SELECT DISTINCT ON (user_id) user_id, plan, period, amount
+              FROM payments WHERE status='paid'
+              ORDER BY user_id, created_at DESC
+            )
+            SELECT u.plan, l.period, l.amount
+            FROM users u JOIN latest l ON l.user_id = u.id
+            WHERE u.plan IS DISTINCT FROM 'free' AND u.is_trial = false
+              AND (u.plan_expires_at IS NULL OR u.plan_expires_at > now())
+        """)
+        counts = await con.fetchrow("""
+            SELECT
+              count(*) FILTER (WHERE role='client')                                              AS total,
+              count(*) FILTER (WHERE role='client' AND is_trial=true
+                               AND (plan_expires_at IS NULL OR plan_expires_at>now()))            AS trial,
+              count(*) FILTER (WHERE role='client' AND plan IS DISTINCT FROM 'free' AND is_trial=false
+                               AND (plan_expires_at IS NULL OR plan_expires_at>now()))            AS paid,
+              count(*) FILTER (WHERE role='client' AND plan IS DISTINCT FROM 'free' AND is_trial=false
+                               AND plan_expires_at IS NOT NULL AND plan_expires_at<=now())        AS churned,
+              count(*) FILTER (WHERE role='client' AND created_at > now()-interval '30 days')     AS new_30d
+            FROM users
+        """)
+        ever_paid = await con.fetchval("SELECT count(DISTINCT user_id) FROM payments WHERE status='paid'") or 0
+        total_rev = await con.fetchval("SELECT COALESCE(sum(amount),0) FROM payments WHERE status='paid'") or 0
+        this_month = await con.fetchval(
+            "SELECT COALESCE(sum(amount),0) FROM payments WHERE status='paid' "
+            "AND date_trunc('month',created_at)=date_trunc('month',now())") or 0
+        last_month = await con.fetchval(
+            "SELECT COALESCE(sum(amount),0) FROM payments WHERE status='paid' "
+            "AND date_trunc('month',created_at)=date_trunc('month',now()-interval '1 month')") or 0
+        rev = await con.fetch("""
+            SELECT to_char(date_trunc('month', created_at),'YYYY-MM') AS ym,
+                   sum(amount) AS revenue, count(*) AS payments
+            FROM payments WHERE status='paid' AND created_at > now()-interval '12 months'
+            GROUP BY 1 ORDER BY 1
+        """)
+        feed = await con.fetch("""
+            SELECT p.amount, p.plan, p.period, p.method, p.created_at, u.email
+            FROM payments p JOIN users u ON u.id=p.user_id
+            WHERE p.status='paid' ORDER BY p.created_at DESC LIMIT 12
+        """)
+
+    def mrr_of(amount, period):  # годовые нормируем к месяцу
+        return (amount / 12.0) if period == "year" else float(amount)
+
+    mrr = sum(mrr_of(r["amount"], r["period"]) for r in active)
+    by_plan: dict = {}
+    for r in active:
+        b = by_plan.setdefault(r["plan"], {"count": 0, "mrr": 0.0})
+        b["count"] += 1
+        b["mrr"] += mrr_of(r["amount"], r["period"])
+
+    paid = counts["paid"] or 0
+    churned = counts["churned"] or 0
+    arpu = (mrr / paid) if paid else 0.0
+    churn_rate = (churned / (paid + churned)) if (paid + churned) else 0.0
+    ltv = (arpu / churn_rate) if churn_rate > 0 else (arpu * 24)      # оценка; без оттока — кап 24 мес
+    conversion = (ever_paid / counts["total"] * 100) if counts["total"] else 0.0
+    growth = ((this_month - last_month) / last_month * 100) if last_month else (100.0 if this_month else 0.0)
+
+    return {
+        "mrr": round(mrr), "arr": round(mrr * 12),
+        "arpu": round(arpu), "ltv": round(ltv),
+        "paid": paid, "trial": counts["trial"], "total": counts["total"],
+        "new_30d": counts["new_30d"], "churned": churned,
+        "churn_rate": round(churn_rate * 100, 1),
+        "conversion": round(conversion, 1),
+        "revenue_total": total_rev, "revenue_month": this_month, "revenue_prev": last_month,
+        "growth_pct": round(growth, 1),
+        "by_plan": [
+            {"plan": k, "name": PLANS.get(k, {}).get("name", k), "count": v["count"], "mrr": round(v["mrr"])}
+            for k, v in sorted(by_plan.items(), key=lambda kv: -kv[1]["mrr"])
+        ],
+        "timeseries": [{"ym": r["ym"], "revenue": r["revenue"] or 0, "payments": r["payments"]} for r in rev],
+        "feed": [
+            {"email": f["email"], "plan": PLANS.get(f["plan"], {}).get("name", f["plan"]),
+             "period": f["period"], "amount": f["amount"], "method": f["method"],
+             "at": f["created_at"].isoformat() if f["created_at"] else None}
+            for f in feed
+        ],
+    }
 
 
 @app.get("/pricing")
