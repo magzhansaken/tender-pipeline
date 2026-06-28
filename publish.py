@@ -33,10 +33,17 @@ import asyncpg
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
 
-# приблизительные курсы к тенге (можно переопределить в .env)
-RATE_RUB = float(os.getenv("RATE_RUB", "5.0"))
-RATE_CNY = float(os.getenv("RATE_CNY", "66.0"))
-RATE_USD = float(os.getenv("RATE_USD", "470.0"))
+# Курсы к тенге: ЖИВОЙ официальный курс Нацбанка РК (с суточным кешем и откатом
+# на дефолт, если сайт недоступен — fx_rate никогда не падает).
+try:
+    import fx_rate
+    RATE_USD = fx_rate.get_rate("USD")
+    RATE_RUB = fx_rate.get_rate("RUB")
+    RATE_CNY = fx_rate.get_rate("CNY")
+except Exception:
+    RATE_RUB = float(os.getenv("RATE_RUB", "6.0"))
+    RATE_CNY = float(os.getenv("RATE_CNY", "66.0"))
+    RATE_USD = float(os.getenv("RATE_USD", "478.0"))
 
 
 def as_dict(val):
@@ -152,12 +159,39 @@ async def main():
         except Exception:
             lot_price = None
 
-        # Цена-ориентир от Олламы уже в тенге -> не пересчитываем по сайту
-        # (иначе ozon.ru дал бы ×5 поверх уже сконвертированного — двойной счёт).
-        if mr.get("price_currency") == "KZT":
-            purchase = parse_price(mr.get("price"))
+        # Конвертация цены закупки в тенге по ЖИВОМУ курсу (Нацбанк РК).
+        # Alibaba — это оптовый ОРИЕНТИР (USD), а НЕ цена закупки: маржу по нему
+        # НЕ считаем (иначе вышла бы недостоверная маржа), а показываем отдельной
+        # честной строкой в пояснении.
+        cur_code = (mr.get("price_currency") or "").upper()
+        raw_price = parse_price(mr.get("price"))
+        is_alibaba = mr.get("price_source") == "alibaba"
+        if is_alibaba:
+            purchase = None
+        elif cur_code == "KZT":
+            purchase = raw_price
+        elif cur_code == "USD":
+            purchase = raw_price * RATE_USD if raw_price else None
+        elif cur_code == "RUB":
+            purchase = raw_price * RATE_RUB if raw_price else None
+        elif cur_code == "CNY":
+            purchase = raw_price * RATE_CNY if raw_price else None
         else:
-            purchase = to_kzt(parse_price(mr.get("price")), site)
+            purchase = to_kzt(raw_price, site)
+
+        # Пояснение к лоту: для Alibaba добавляем оптовый ориентир в тенге.
+        reason_text = mr.get("reason") or ""
+        if is_alibaba and raw_price:
+            ali_kzt = "{:,}".format(int(round(raw_price * RATE_USD))).replace(",", " ")
+            moq = mr.get("ali_moq") or ""
+            lo = mr.get("ali_usd_low")
+            hi = mr.get("ali_usd_high")
+            rng = (" ($%s\u2013$%s)" % (lo, hi)) if (lo and hi) else ""
+            note = ("Alibaba опт-ориентир: ~%s \u20b8%s%s \u2014 это ОПТОВАЯ цена с Alibaba "
+                    "(USD по курсу Нацбанка), НЕ реальная цена закупки для тендера."
+                    % (ali_kzt, (" от " + str(moq)) if moq else "", rng))
+            reason_text = (note + (" | " + reason_text if reason_text else "")).strip()
+
         qty = to_int(r["quantity"])
 
         ln = r["lot_number"] or ""
@@ -188,7 +222,7 @@ async def main():
             json.dumps(mr.get("missing_specs") or [], ensure_ascii=False),
             json.dumps(mr.get("conflicts") or [], ensure_ascii=False),
             r["confidence"],
-            mr.get("reason"),
+            reason_text,
             lot_price,
             purchase,
             margin,

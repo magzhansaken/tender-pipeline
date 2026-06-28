@@ -17,11 +17,7 @@ import os
 import re
 import json
 import time
-
-try:
-    import requests
-except Exception:
-    requests = None
+import urllib.request
 
 URL = "https://nationalbank.kz/rss/rates_all.xml"
 CACHE = os.getenv("FX_CACHE", "/tmp/fx_rates.json")
@@ -66,15 +62,16 @@ def refresh(force=False):
     cached = _load_cache()
     if cached and not force and (time.time() - cached.get("ts", 0) < TTL):
         return cached.get("rates", {}), "cache"
-    if requests is not None:
-        try:
-            r = requests.get(URL, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-            rates = parse_xml(r.text)
-            if rates.get("USD"):  # успех только если хотя бы доллар распарсился
-                _save_cache(rates)
-                return rates, "nbk"
-        except Exception:
-            pass
+    try:
+        req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            xml = resp.read().decode("utf-8", "replace")
+        rates = parse_xml(xml)
+        if rates.get("USD"):  # успех только если хотя бы доллар распарсился
+            _save_cache(rates)
+            return rates, "nbk"
+    except Exception:
+        pass
     # сайт не дал — откатываемся на кеш (даже устаревший), потом на дефолт
     if cached and cached.get("rates"):
         return cached["rates"], "stale-cache"
