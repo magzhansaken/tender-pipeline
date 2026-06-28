@@ -103,35 +103,79 @@ def parse_page_rows(html):
     return out
 
 
+def parse_total(html):
+    """Сколько всего лотов обещает goszakup ('из 4 973 записей')."""
+    m = re.search(r"из\s+([\d\s\u00a0]+?)\s+запис", html)
+    if m:
+        digits = re.sub(r"[^\d]", "", m.group(1))
+        if digits:
+            return int(digits)
+    return None
+
+
 async def main():
     print("Единый проход сверки с goszakup%s" % (" [DRY-RUN]" if DRY_RUN else ""))
     parser = GoszakupParser()       # даёт self.session и get_lot_specifications/get_announce_deadline
     session = parser.session
 
-    # ── 1) собрать все активные лоты ──
+    # ── 1) собрать все активные лоты (надёжно: знаем total, повторяем пустые) ──
     active = {}
+    total = None
     completed = False
-    for page in range(1, MAX_PAGES + 1):
+    page = 1
+    empty_retries = 0
+    while page <= MAX_PAGES:
         url = f"{BASE}/ru/search/lots?{FILTER}&count_record=50&page={page}"
         try:
             r = await asyncio.to_thread(session.get, url, timeout=40)
-            if r.status_code != 200:
-                print("стр %d: HTTP %s — обрыв, база НЕ тронется." % (page, r.status_code))
+        except Exception as e:
+            print("стр %d: сеть упала (%s), повтор..." % (page, str(e)[:40]))
+            empty_retries += 1
+            if empty_retries > 6:
                 completed = False
                 break
-            rows = parse_page_rows(r.text)
-        except Exception as e:
-            print("стр %d: ошибка %s — обрыв, база НЕ тронется." % (page, e))
-            completed = False
-            break
+            await asyncio.sleep(3 * empty_retries)
+            continue
+        if r.status_code != 200:
+            print("стр %d: HTTP %s, повтор..." % (page, r.status_code))
+            empty_retries += 1
+            if empty_retries > 6:
+                completed = False
+                break
+            await asyncio.sleep(3 * empty_retries)
+            continue
+
+        if total is None:
+            total = parse_total(r.text)
+            if total:
+                print("goszakup обещает всего: %d лотов" % total)
+
+        rows = parse_page_rows(r.text)
         if not rows:
-            completed = True
-            break
+            # пустая страница: либо настоящий конец, либо временный сбой goszakup
+            if total and len(active) >= total - 30:
+                completed = True            # собрали практически всё — это конец
+                break
+            empty_retries += 1
+            if empty_retries > 6:
+                # упорно пусто, а лотов мало — goszakup придушил, не принимаем частичное
+                completed = (total is None and len(active) > 0)
+                break
+            print("стр %d: пусто (собрано %d из %s) — повтор через паузу..."
+                  % (page, len(active), total or "?"))
+            await asyncio.sleep(4 * empty_retries)
+            continue                         # повторяем ЭТУ ЖЕ страницу
+
+        empty_retries = 0
         for it in rows:
             active[it["lot_number"]] = it
+        if total and len(active) >= total:
+            completed = True
+            break
         if page % 20 == 0:
-            print("  ... стр %d, активных %d" % (page, len(active)))
-        time.sleep(0.25)
+            print("  ... стр %d, активных %d из %s" % (page, len(active), total or "?"))
+        page += 1
+        await asyncio.sleep(0.4)
 
     print("\nАктивных на goszakup: %d (полностью: %s)" % (len(active), "да" if completed else "НЕТ"))
     if not completed:
