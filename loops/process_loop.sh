@@ -11,7 +11,7 @@ docker rm ollama_worker >/dev/null 2>&1
 # есть ли что обрабатывать?
 NEED=$(docker compose exec -T -e PGPASSWORD=$PG db psql -U tender -d tender -tAc "SELECT count(*) FROM tenders WHERE structured_spec IS NULL AND stage='collected';" 2>/dev/null | tr -d '[:space:]')
 [ -z "$NEED" ] && exit 0
-[ "$NEED" = "0" ] && exit 0
+[ "$NEED" = "0" ] && { echo "===== $(date) нечего обрабатывать (простой) =====" >> "$LOG"; exit 0; }
 echo "===== $(date) старт: $NEED необработанных =====" >> "$LOG"
 docker run -d --name ollama_worker --network tenderview_default \
   -v "$REPO":/app -w /app --env-file /opt/tenderview/.env \

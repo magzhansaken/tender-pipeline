@@ -18,7 +18,7 @@ NEED=$(docker compose exec -T -e PGPASSWORD=$PG db psql -U tender -d tender -tAc
   "SELECT count(*) FROM tenders WHERE match_status='FOUND_EXACT' AND COALESCE(found_url, match_result->>'source_url') ILIKE '%wildberries.ru/catalog/%' AND is_closed=false AND (deadline IS NULL OR deadline >= now()) AND (match_result->>'price') IS NULL AND COALESCE((match_result->>'wb_tries')::int,0) < 2;" \
   2>/dev/null | tr -d '[:space:]')
 [ -z "$NEED" ] && exit 0
-[ "$NEED" = "0" ] && exit 0
+[ "$NEED" = "0" ] && { echo "===== $(date) нечего обрабатывать (простой) =====" >> "$LOG"; exit 0; }
 
 echo "===== $(date) WB-проход: $NEED ждут =====" >> "$LOG"
 docker run -d --name wb_worker --network tenderview_default \

@@ -25,7 +25,6 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-па
 LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
 WORKER_LOGS = [
     {"name": "Сверка с goszakup (новые+статусы)", "file": "daily_sync_loop.log", "schedule": "каждые 4 часа", "max_min": 290},
-    {"name": "Загрузка в базу",       "file": "loader.log",       "schedule": "каждые 5 мин",         "max_min": 20},
     {"name": "Обработка (Оллама)",    "file": "ollama_loop.log",  "schedule": "каждые 10 мин",        "max_min": 35},
     {"name": "Поиск на площадках",    "file": "search_loop.log",  "schedule": "каждые 15 мин",        "max_min": 50},
     {"name": "Публикация на витрину", "file": "publish.log",      "schedule": "каждые 15 мин",        "max_min": 50},
