@@ -135,6 +135,7 @@
   .b-other{background:#222c3a;color:#9aa7b8}
   .b-owner{background:#1c2c44;color:#79b8ff}
   .b-paid{background:#10342e;color:#2dd4bf}
+  .b-trial{background:#2a1f0c;color:#f5b54b}
   .subtle{color:var(--faint);font-size:10.5px;margin-top:3px}
   .row-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
   .btn-plan{background:#10342e;color:#2dd4bf;border-color:#1f5f56}
@@ -734,8 +735,11 @@ function planBadge(c){
   if(!c.plan || c.plan==="free") return "<span class='badge b-other'>Демо</span>";
   const exp = c.plan_expires_at ? new Date(c.plan_expires_at) : null;
   const expired = exp && exp < new Date();
-  const cls = expired ? "b-notfound" : "b-paid";
-  let s = "<span class='badge "+cls+"'>"+escHtml(c.plan_name||c.plan)+"</span>";
+  let cls, label;
+  if(expired){ cls="b-notfound"; label=escHtml(c.plan_name||c.plan); }
+  else if(c.is_trial){ cls="b-trial"; label="Триал · "+escHtml(c.plan_name||c.plan); }
+  else { cls="b-paid"; label=escHtml(c.plan_name||c.plan); }
+  let s = "<span class='badge "+cls+"'>"+label+"</span>";
   if(exp){ s += "<div class='subtle'>"+(expired?"истёк ":"до ")+fmtDate(c.plan_expires_at)+"</div>"; }
   return s;
 }
@@ -744,7 +748,7 @@ function renderClients(d){
   document.getElementById("client-stats").innerHTML =
     statCard("Всего клиентов", s.clients) +
     statCard("Платных подписок", s.paid, (s.paid>0?"var(--teal)":null)) +
-    statCard("Активных", s.active, "var(--green)") +
+    statCard("На триале", s.trial, (s.trial>0?"var(--amber)":null)) +
     statCard("Заблокировано", s.blocked, (s.blocked>0?"var(--red)":null));
   document.getElementById("clients-meta").textContent = "Найдено "+fmt(d.total)+" аккаунтов · страница "+d.page+" из "+(d.pages||1);
   const tbl = document.getElementById("clients-table");

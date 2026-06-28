@@ -120,6 +120,26 @@
   .price{font-size:13.5px; color:var(--muted)}
   .price b{font-family:var(--mono); color:var(--ink); font-variant-numeric:tabular-nums}
   .price .pos{color:var(--ok)} .price .neg{color:var(--bad)}
+  .locked-chip{display:inline-flex;align-items:center;gap:5px;background:var(--surface-2);border:1px dashed var(--line-2);
+    color:var(--faint);border-radius:7px;padding:2px 8px;font-size:12.5px}
+  .locked-chip svg{width:13px;height:13px}
+  .unlock{color:var(--accent);font-weight:600;text-decoration:none;font-size:12.5px;white-space:nowrap}
+  .unlock:hover{color:var(--accent-ink)}
+  .gate-banner{display:flex;align-items:center;gap:14px;background:linear-gradient(100deg,var(--ok-bg),transparent 80%),var(--surface);
+    border:1px solid var(--accent);border-radius:var(--radius);padding:14px 16px;margin:0 0 14px}
+  .gate-ic{width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .gate-ic svg{width:19px;height:19px;color:#fff}
+  .gate-tx{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .gate-tx b{font-size:14.5px;color:var(--ink)}
+  .gate-tx span{font-size:13px;color:var(--muted)}
+  .gate-cta{background:var(--accent);color:#fff;font-weight:600;font-size:13.5px;padding:10px 16px;border-radius:10px;
+    text-decoration:none;white-space:nowrap;flex:0 0 auto}
+  .gate-cta:hover{background:var(--accent-ink)}
+  .trial-strip{display:flex;align-items:center;gap:8px;background:var(--warn-bg);border:1px solid var(--warn);
+    color:var(--ink);border-radius:10px;padding:9px 14px;margin:0 0 14px;font-size:13.5px}
+  .trial-strip svg{width:15px;height:15px;color:var(--warn);flex:0 0 auto}
+  .trial-strip a{margin-left:auto;color:var(--accent);font-weight:600;text-decoration:none;white-space:nowrap}
+  @media(max-width:560px){.gate-banner{flex-wrap:wrap}.gate-cta{width:100%;text-align:center}}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -187,6 +207,7 @@
     </select>
   </div>
 
+  <div id="gate"></div>
   <p class="meta" id="meta"></p>
   <div id="list"></div>
   <div class="pager" id="pager" hidden>
@@ -256,6 +277,32 @@ function priceBlock(it){
   return `<div class="price">${s}</div>`;
 }
 
+const LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+
+function lockedPriceBlock(it){
+  let s = "";
+  if(it.lot_price!=null) s += `Лот <b>${money(it.lot_price)}</b>${it.quantity?` <span style="color:var(--faint)">× ${(it.quantity).toLocaleString("ru-RU")} ${unitOf(it.unit)}</span>`:""} `;
+  s += `<span class="locked-chip">${LOCK_SVG} закуп и маржа скрыты</span> <a class="unlock" href="/pricing">Разблокировать →</a>`;
+  return `<div class="price">${s}</div>`;
+}
+
+function renderGate(){
+  const el = $("#gate");
+  if(!el) return;
+  if(ACCESS.entitled){
+    if(ACCESS.trial && ACCESS.trial_days_left!=null){
+      el.innerHTML = `<div class="trial-strip">${LOCK_SVG}<span>Пробный доступ — осталось <b>${ACCESS.trial_days_left} дн.</b> Цена и маржа открыты по всем тендерам.</span><a href="/pricing">Тарифы →</a></div>`;
+    }else{ el.innerHTML = ""; }
+    return;
+  }
+  const avail = (ACCESS.available||0).toLocaleString("ru-RU");
+  el.innerHTML = `<div class="gate-banner">
+    <div class="gate-ic">${LOCK_SVG}</div>
+    <div class="gate-tx"><b>Цена поставщика и маржа скрыты</b><span>Показаны первые ${ACCESS.shown||0} тендеров из ${avail}. Откройте доступ, чтобы видеть закуп, маржу и все лоты.</span></div>
+    <a class="gate-cta" href="/pricing">Открыть доступ</a>
+  </div>`;
+}
+
 function card(it){
   const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
   const conf = it.confidence||0;
@@ -299,7 +346,7 @@ function card(it){
           <div class="track"><div class="fill" style="width:${conf}%"></div></div>
           <span class="pct">${conf}%</span>
         </div>
-        ${priceBlock(it)}
+        ${ACCESS.entitled ? priceBlock(it) : lockedPriceBlock(it)}
         ${cand}
       </div>
       ${details}
@@ -307,6 +354,8 @@ function card(it){
   </article>`;
 }
 
+const AUTH_TOKEN = localStorage.getItem("tf_token");
+let ACCESS = {entitled:true, trial:false};
 let reqId = 0;
 async function load(){
   const mine = ++reqId;
@@ -320,13 +369,16 @@ async function load(){
   p.set("offset", state.offset);
   let data;
   try{
-    data = await (await fetch("/api/lots?"+p)).json();
+    const headers = AUTH_TOKEN ? {"X-Auth-Token": AUTH_TOKEN} : {};
+    data = await (await fetch("/api/lots?"+p, {headers})).json();
   }catch(e){
     if(mine!==reqId) return;
     $("#list").innerHTML = `<div class="state">Не удалось загрузить лоты. Обновите страницу.</div>`;
     return;
   }
   if(mine!==reqId) return; // пришёл устаревший ответ
+  ACCESS = data.access || {entitled:true, trial:false};
+  renderGate();
   const {items, total, offset, limit} = data;
   if(!items.length){
     $("#meta").textContent = "";
@@ -337,7 +389,7 @@ async function load(){
   $("#meta").textContent = `Показано ${offset+1}–${offset+items.length} из ${total}`;
   $("#list").innerHTML = items.map(card).join("");
   // пагинация
-  $("#pager").hidden = total <= limit;
+  $("#pager").hidden = !ACCESS.entitled || total <= limit;
   $("#prev").disabled = offset === 0;
   $("#next").disabled = offset + limit >= total;
   $("#pageInfo").textContent = `стр. ${Math.floor(offset/limit)+1} из ${Math.ceil(total/limit)}`;

@@ -166,6 +166,7 @@ async def _init_auth(pool) -> None:
             ALTER TABLE users ADD COLUMN IF NOT EXISTS plan            TEXT DEFAULT 'free';
             ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_started_at TIMESTAMPTZ;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial        BOOLEAN DEFAULT false;
             CREATE TABLE IF NOT EXISTS payments (
                 id         BIGSERIAL PRIMARY KEY,
                 user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -223,13 +224,50 @@ async def _user_by_token(token: str | None):
         return None
     async with app.state.pool.acquire() as con:
         row = await con.fetchrow(
-            "SELECT u.id, u.email, u.role, u.status FROM sessions s "
-            "JOIN users u ON u.id = s.user_id "
+            "SELECT u.id, u.email, u.role, u.status, u.plan, u.plan_expires_at, u.is_trial "
+            "FROM sessions s JOIN users u ON u.id = s.user_id "
             "WHERE s.token_hash = $1 AND s.expires_at > now()", _token_hash(token)
         )
     if not row or row["status"] != "active":
         return None
     return dict(row)
+
+
+# ─────────── Гейтинг доступа (Фаза 2.4) ───────────
+# Бесплатным/гостям прячем самое ценное — цену поставщика и маржу — на сервере,
+# а не в CSS (иначе данные видно во вкладке «Сеть»). Список тендеров остаётся как тизер.
+TRIAL_DAYS = 14
+FREE_LOT_LIMIT = 12                       # сколько лотов видит негейтнутый посетитель
+GATED_FIELDS = ("purchase_price", "margin", "margin_pct", "margin_total", "source_url")
+
+
+def _entitlement(user):
+    """(entitled, info) — есть ли полный доступ к цене/марже и что показать в шапке."""
+    if not user:
+        return False, {"plan": "Гость", "trial": False, "trial_days_left": None}
+    if user.get("role") == "owner":
+        return True, {"plan": "Владелец", "trial": False, "trial_days_left": None}
+    plan = user.get("plan") or "free"
+    exp = user.get("plan_expires_at")
+    is_trial = bool(user.get("is_trial"))
+    entitled = plan != "free" and (exp is None or exp > datetime.now(timezone.utc))
+    days_left = None
+    if entitled and is_trial and exp is not None:
+        secs = (exp - datetime.now(timezone.utc)).total_seconds()
+        days_left = max(0, -(-int(secs) // 86400))   # округление вверх до целого дня
+    return entitled, {
+        "plan": (PLANS.get(plan, {}).get("name", plan) if entitled else "Демо"),
+        "trial": entitled and is_trial,
+        "trial_days_left": days_left,
+    }
+
+
+def _gate_row(d: dict) -> dict:
+    """Прячет ценные поля у негейтнутого пользователя."""
+    for f in GATED_FIELDS:
+        if f in d:
+            d[f] = None
+    return d
 
 
 async def current_user(x_auth_token: str | None = Header(default=None)):
@@ -267,11 +305,12 @@ async def auth_register(c: Credentials):
         if await con.fetchval("SELECT 1 FROM users WHERE email=$1", email):
             raise HTTPException(status_code=409, detail="Пользователь с таким email уже есть")
         uid = await con.fetchval(
-            "INSERT INTO users (email, password_hash, role) VALUES ($1,$2,'client') RETURNING id",
-            email, hash_password(c.password)
+            "INSERT INTO users (email, password_hash, role, plan, plan_started_at, plan_expires_at, is_trial) "
+            "VALUES ($1,$2,'client','start',now(), now() + ($3::int * INTERVAL '1 day'), true) RETURNING id",
+            email, hash_password(c.password), TRIAL_DAYS
         )
         token = await _open_session(con, uid)
-    return {"token": token, "email": email, "role": "client"}
+    return {"token": token, "email": email, "role": "client", "trial_days": TRIAL_DAYS}
 
 
 @app.post("/api/auth/login")
@@ -346,7 +385,13 @@ async def list_lots(
     sort: str = "confidence",
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user=Depends(current_user),
 ):
+    entitled, acc = _entitlement(user)
+    if not entitled:                       # тизер: первые N лотов, без листания
+        limit = min(limit, FREE_LOT_LIMIT)
+        offset = 0
+
     where: list[str] = []
     args: list = []
 
@@ -376,12 +421,26 @@ async def list_lots(
             *args, limit, offset,
         )
 
-    _cache(response)
-    return {"items": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+    items = [dict(r) for r in rows]
+    if not entitled:
+        items = [_gate_row(d) for d in items]
+
+    # ответ зависит от пользователя — публично не кэшируем (иначе CDN отдаст чужой доступ)
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "items": items, "total": total, "limit": limit, "offset": offset,
+        "access": {
+            "entitled": entitled,
+            "plan": acc["plan"], "trial": acc["trial"], "trial_days_left": acc["trial_days_left"],
+            "locked_fields": list(GATED_FIELDS) if not entitled else [],
+            "shown": len(items), "available": total,
+        },
+    }
 
 
 @app.get("/api/lots/{row_id}")
-async def get_lot(row_id: int, response: Response):
+async def get_lot(row_id: int, response: Response, user=Depends(current_user)):
+    entitled, _ = _entitlement(user)
     pool = app.state.pool
     async with pool.acquire() as con:
         row = await con.fetchrow(
@@ -391,8 +450,12 @@ async def get_lot(row_id: int, response: Response):
         )
     if not row:
         raise HTTPException(status_code=404, detail="Лот не найден")
-    _cache(response)
-    return dict(row)
+    d = dict(row)
+    if not entitled:
+        d = _gate_row(d)
+        d["locked"] = True
+    response.headers["Cache-Control"] = "private, no-store"
+    return d
 
 
 @app.get("/api/stats")
@@ -726,14 +789,15 @@ async def admin_clients(
               count(*) FILTER (WHERE role='client')                                          AS clients,
               count(*) FILTER (WHERE role='client' AND status='active')                      AS active,
               count(*) FILTER (WHERE status='blocked')                                       AS blocked,
-              count(*) FILTER (WHERE role='client' AND created_at > now()-interval '7 days') AS new_7d,
-              count(*) FILTER (WHERE role='client' AND plan IS DISTINCT FROM 'free'
+              count(*) FILTER (WHERE role='client' AND is_trial=true
+                               AND (plan_expires_at IS NULL OR plan_expires_at > now()))     AS trial,
+              count(*) FILTER (WHERE role='client' AND plan IS DISTINCT FROM 'free' AND is_trial=false
                                AND (plan_expires_at IS NULL OR plan_expires_at > now()))     AS paid
             FROM users
         """)
         offset = (page - 1) * per_page
         rows = await con.fetch(
-            f"SELECT id, email, role, status, created_at, last_login, plan, plan_expires_at "
+            f"SELECT id, email, role, status, created_at, last_login, plan, plan_expires_at, is_trial "
             f"FROM users{where} "
             f"ORDER BY created_at DESC NULLS LAST LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
             *args, per_page, offset,
@@ -745,14 +809,14 @@ async def admin_clients(
         "pages": ((total or 0) + per_page - 1) // per_page,
         "stats": {
             "clients": stats["clients"], "active": stats["active"],
-            "blocked": stats["blocked"], "new_7d": stats["new_7d"],
-            "paid": stats["paid"],
+            "blocked": stats["blocked"], "trial": stats["trial"], "paid": stats["paid"],
         },
         "clients": [{
             "id": r["id"], "email": r["email"], "role": r["role"], "status": r["status"],
             "plan": r["plan"] or "free",
             "plan_name": PLANS.get(r["plan"] or "free", {}).get("name", r["plan"]),
             "plan_expires_at": r["plan_expires_at"].isoformat() if r["plan_expires_at"] else None,
+            "is_trial": bool(r["is_trial"]),
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             "last_login": r["last_login"].isoformat() if r["last_login"] else None,
         } for r in rows],
@@ -809,13 +873,13 @@ async def admin_set_plan(uid: int, body: SetPlanBody, _: None = Depends(check_ad
 
         if body.plan == "free":
             await con.execute(
-                "UPDATE users SET plan='free', plan_started_at=NULL, plan_expires_at=NULL WHERE id=$1", uid)
+                "UPDATE users SET plan='free', plan_started_at=NULL, plan_expires_at=NULL, is_trial=false WHERE id=$1", uid)
             return {"ok": True, "plan": "free", "plan_expires_at": None}
 
         # продлеваем от большей из дат: сейчас или текущий конец подписки
         base = "GREATEST(now(), COALESCE(plan_expires_at, now()))"
         new_exp = await con.fetchval(
-            f"UPDATE users SET plan=$1, "
+            f"UPDATE users SET plan=$1, is_trial=false, "
             f"plan_started_at=COALESCE(plan_started_at, now()), "
             f"plan_expires_at={base} + ($2::int * INTERVAL '1 month') "
             f"WHERE id=$3 RETURNING plan_expires_at",
