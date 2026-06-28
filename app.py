@@ -9,7 +9,9 @@ TenderView API — только чтение готовых лотов.
 """
 import os
 import json
+import time
 from pathlib import Path
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -20,6 +22,16 @@ from fastapi.staticfiles import StaticFiles
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/tender")
 STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
+LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
+WORKER_LOGS = [
+    {"name": "Сбор с goszakup",      "file": "cron.log",         "schedule": "раз в сутки (≈21:00)", "max_min": 1560},
+    {"name": "Загрузка в базу",       "file": "loader_cron.log",  "schedule": "каждые 5 мин",         "max_min": 20},
+    {"name": "Обработка (Оллама)",    "file": "ollama_cron.log",  "schedule": "каждые 10 мин",        "max_min": 35},
+    {"name": "Поиск на площадках",    "file": "search_cron.log",  "schedule": "каждые 15 мин",        "max_min": 50},
+    {"name": "Публикация на витрину", "file": "publish_cron.log", "schedule": "каждые 15 мин",        "max_min": 50},
+    {"name": "Wildberries (цены)",    "file": "wb_cron.log",      "schedule": "каждый час",           "max_min": 150},
+    {"name": "Alibaba (ориентиры)",   "file": "alibaba_loop.log", "schedule": "каждые 30 мин",        "max_min": 120},
+]
 
 
 async def _init_conn(con: asyncpg.Connection) -> None:
@@ -214,6 +226,49 @@ async def admin_health(_: None = Depends(check_admin)):
             "last_published": last_published.isoformat() if last_published else None,
         },
     }
+
+
+@app.get("/api/admin/workers")
+async def admin_workers(_: None = Depends(check_admin)):
+    """Статус cron-воркеров по их лог-файлам: когда последний раз писали и что именно."""
+    out = []
+    now = time.time()
+    for w in WORKER_LOGS:
+        p = Path(LOGS_DIR) / w["file"]
+        item = {
+            "name": w["name"], "schedule": w["schedule"], "file": w["file"],
+            "exists": False, "mtime": None, "minutes_ago": None,
+            "last_line": "", "status": "unknown",
+        }
+        try:
+            if p.exists():
+                item["exists"] = True
+                mt = p.stat().st_mtime
+                item["mtime"] = datetime.fromtimestamp(mt, tz=timezone.utc).isoformat()
+                mins = (now - mt) / 60.0
+                item["minutes_ago"] = round(mins)
+                if mins <= w["max_min"]:
+                    item["status"] = "ok"
+                elif mins <= w["max_min"] * 3:
+                    item["status"] = "late"
+                else:
+                    item["status"] = "down"
+                try:
+                    with open(p, "rb") as f:
+                        f.seek(0, 2)
+                        size = f.tell()
+                        f.seek(max(0, size - 4096))
+                        tail = f.read().decode("utf-8", "replace")
+                    for ln in reversed(tail.splitlines()):
+                        if ln.strip():
+                            item["last_line"] = ln.strip()[:200]
+                            break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        out.append(item)
+    return {"workers": out, "logs_dir_ok": Path(LOGS_DIR).exists()}
 
 
 @app.get("/admin")
