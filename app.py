@@ -24,12 +24,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
 LOGS_DIR = os.getenv("HOST_LOGS_DIR", "/hostlogs")  # сюда монтируем /opt/tenderview (ro)
 WORKER_LOGS = [
-    {"name": "Сбор с goszakup",      "file": "cron.log",         "schedule": "раз в сутки (≈21:00)", "max_min": 1560},
-    {"name": "Загрузка в базу",       "file": "loader_cron.log",  "schedule": "каждые 5 мин",         "max_min": 20},
-    {"name": "Обработка (Оллама)",    "file": "ollama_cron.log",  "schedule": "каждые 10 мин",        "max_min": 35},
-    {"name": "Поиск на площадках",    "file": "search_cron.log",  "schedule": "каждые 15 мин",        "max_min": 50},
-    {"name": "Публикация на витрину", "file": "publish_cron.log", "schedule": "каждые 15 мин",        "max_min": 50},
-    {"name": "Wildberries (цены)",    "file": "wb_cron.log",      "schedule": "каждый час",           "max_min": 150},
+    {"name": "Сбор с goszakup",      "file": "collect.log",      "schedule": "раз в сутки (≈21:00)", "max_min": 1560},
+    {"name": "Загрузка в базу",       "file": "loader.log",       "schedule": "каждые 5 мин",         "max_min": 20},
+    {"name": "Обработка (Оллама)",    "file": "ollama_loop.log",  "schedule": "каждые 10 мин",        "max_min": 35},
+    {"name": "Поиск на площадках",    "file": "search_loop.log",  "schedule": "каждые 15 мин",        "max_min": 50},
+    {"name": "Публикация на витрину", "file": "publish.log",      "schedule": "каждые 15 мин",        "max_min": 50},
+    {"name": "Wildberries (цены)",    "file": "wb_loop.log",      "schedule": "каждый час",           "max_min": 150},
     {"name": "Alibaba (ориентиры)",   "file": "alibaba_loop.log", "schedule": "каждые 30 мин",        "max_min": 120},
 ]
 
@@ -259,10 +259,21 @@ async def admin_workers(_: None = Depends(check_admin)):
                         size = f.tell()
                         f.seek(max(0, size - 4096))
                         tail = f.read().decode("utf-8", "replace")
+
+                    def _is_noise(s: str) -> bool:
+                        if s.startswith("nohup:"):
+                            return True
+                        # ID docker-контейнера (длинная hex-строка) — не показываем
+                        if len(s) >= 12 and all(c in "0123456789abcdef" for c in s):
+                            return True
+                        return False
+
                     for ln in reversed(tail.splitlines()):
-                        if ln.strip():
-                            item["last_line"] = ln.strip()[:200]
-                            break
+                        s = ln.strip()
+                        if not s or _is_noise(s):
+                            continue
+                        item["last_line"] = s[:200]
+                        break
                 except Exception:
                     pass
         except Exception:
