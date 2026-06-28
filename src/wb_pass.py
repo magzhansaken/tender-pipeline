@@ -34,7 +34,6 @@ FROM tenders
 WHERE match_status = 'FOUND_EXACT'
   AND COALESCE(found_url, match_result->>'source_url') ILIKE '%%wildberries.ru/catalog/%%'
   AND is_closed = false
-  AND (deadline IS NULL OR deadline >= now())
   AND (match_result->>'price') IS NULL
   AND COALESCE((match_result->>'wb_tries')::int, 0) < %s
 ORDER BY collected_at DESC

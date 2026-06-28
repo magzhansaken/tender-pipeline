@@ -15,7 +15,7 @@ docker rm wb_worker >/dev/null 2>&1
 
 # есть ли что обрабатывать (живые WB-EXACT без цены, попыток < 2)?
 NEED=$(docker compose exec -T -e PGPASSWORD=$PG db psql -U tender -d tender -tAc \
-  "SELECT count(*) FROM tenders WHERE match_status='FOUND_EXACT' AND COALESCE(found_url, match_result->>'source_url') ILIKE '%wildberries.ru/catalog/%' AND is_closed=false AND (deadline IS NULL OR deadline >= now()) AND (match_result->>'price') IS NULL AND COALESCE((match_result->>'wb_tries')::int,0) < 2;" \
+  "SELECT count(*) FROM tenders WHERE match_status='FOUND_EXACT' AND COALESCE(found_url, match_result->>'source_url') ILIKE '%wildberries.ru/catalog/%' AND is_closed=false AND (match_result->>'price') IS NULL AND COALESCE((match_result->>'wb_tries')::int,0) < 2;" \
   2>/dev/null | tr -d '[:space:]')
 [ -z "$NEED" ] && exit 0
 [ "$NEED" = "0" ] && { echo "===== $(date) нечего обрабатывать (простой) =====" >> "$LOG"; exit 0; }

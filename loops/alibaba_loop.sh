@@ -17,7 +17,7 @@ docker rm alibaba_worker >/dev/null 2>&1
 
 # есть ли что обрабатывать (живые подобранные без цены, ali-попыток < 5)?
 NEED=$(docker compose exec -T -e PGPASSWORD=$PG db psql -U tender -d tender -tAc \
-  "SELECT count(*) FROM tenders WHERE match_status IN ('FOUND_EXACT','FOUND_PARTIAL') AND is_closed=false AND (deadline IS NULL OR deadline >= now()) AND (match_result->>'price') IS NULL AND COALESCE((match_result->>'ali_tries')::int,0) < 5;" \
+  "SELECT count(*) FROM tenders WHERE match_status IN ('FOUND_EXACT','FOUND_PARTIAL') AND is_closed=false AND (match_result->>'price') IS NULL AND COALESCE((match_result->>'ali_tries')::int,0) < 5;" \
   2>/dev/null | tr -d '[:space:]')
 [ -z "$NEED" ] && exit 0
 [ "$NEED" = "0" ] && { echo "===== $(date) нечего обрабатывать (простой) =====" >> "$LOG"; exit 0; }

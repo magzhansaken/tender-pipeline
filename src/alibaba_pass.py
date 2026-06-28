@@ -52,7 +52,6 @@ SELECT id, name, structured_spec, match_result
 FROM tenders
 WHERE match_status IN ('FOUND_EXACT','FOUND_PARTIAL')
   AND is_closed = false
-  AND (deadline IS NULL OR deadline >= now())
   AND (match_result->>'price') IS NULL
   AND COALESCE((match_result->>'ali_tries')::int, 0) < %s
 ORDER BY collected_at DESC
