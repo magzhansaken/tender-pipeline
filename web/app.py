@@ -281,6 +281,154 @@ async def admin_workers(_: None = Depends(check_admin)):
     return {"workers": out, "logs_dir_ok": Path(LOGS_DIR).exists()}
 
 
+def _jload(v):
+    """jsonb из asyncpg может прийти строкой или уже объектом — нормализуем."""
+    if v is None:
+        return None
+    if isinstance(v, (dict, list)):
+        return v
+    try:
+        return json.loads(v)
+    except Exception:
+        return v
+
+
+@app.get("/api/admin/lot-filter-options")
+async def admin_lot_filter_options(_: None = Depends(check_admin)):
+    """Списки для выпадашек фильтра: какие статусы и площадки есть у живых лотов."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        statuses = await con.fetch(
+            "SELECT COALESCE(match_status,'(не обработано)') AS s, count(*) AS c "
+            "FROM tenders WHERE is_closed=false GROUP BY 1 ORDER BY c DESC"
+        )
+        sites = await con.fetch(
+            "SELECT COALESCE(match_result->>'source_site','(не указан)') AS s, count(*) AS c "
+            "FROM tenders WHERE is_closed=false AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
+            "GROUP BY 1 ORDER BY c DESC"
+        )
+    return {
+        "statuses": [{"value": r["s"], "count": r["c"]} for r in statuses],
+        "sites": [{"value": r["s"], "count": r["c"]} for r in sites],
+    }
+
+
+@app.get("/api/admin/lots")
+async def admin_lots(
+    _: None = Depends(check_admin),
+    status: str | None = Query(default=None),
+    has_price: bool | None = Query(default=None),
+    site: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    min_sum: float | None = Query(default=None),
+    max_sum: float | None = Query(default=None),
+    closed: bool = Query(default=False),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+):
+    """Список лотов из tenders с фильтрами и пагинацией. Сортировка по ценности:
+    лоты с ценой и точным совпадением — наверху."""
+    conds, args = [], []
+    if not closed:
+        conds.append("is_closed = false")
+    if status:
+        args.append(status)
+        conds.append(f"COALESCE(match_status,'(не обработано)') = ${len(args)}")
+    if has_price is True:
+        conds.append("(match_result->>'price') IS NOT NULL")
+    elif has_price is False:
+        conds.append("(match_result->>'price') IS NULL")
+    if site:
+        args.append(site)
+        conds.append(f"COALESCE(match_result->>'source_site','(не указан)') = ${len(args)}")
+    if q:
+        args.append(f"%{q}%")
+        conds.append(f"(name ILIKE ${len(args)} OR lot_number ILIKE ${len(args)})")
+    if min_sum is not None:
+        args.append(min_sum)
+        conds.append(f"(price_per_unit * quantity) >= ${len(args)}")
+    if max_sum is not None:
+        args.append(max_sum)
+        conds.append(f"(price_per_unit * quantity) <= ${len(args)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        total = await con.fetchval(f"SELECT count(*) FROM tenders{where}", *args)
+        offset = (page - 1) * per_page
+        rows = await con.fetch(
+            f"SELECT lot_number, name, match_status, "
+            f"COALESCE(match_result->>'source_site','') AS site, "
+            f"price_per_unit, quantity, (match_result->>'price') AS found_price, "
+            f"is_closed, collected_at "
+            f"FROM tenders{where} "
+            f"ORDER BY (CASE WHEN (match_result->>'price') IS NOT NULL THEN 0 ELSE 1 END), "
+            f"(CASE match_status WHEN 'FOUND_EXACT' THEN 0 WHEN 'FOUND_PARTIAL' THEN 1 "
+            f"WHEN 'NOT_FOUND' THEN 2 ELSE 3 END), collected_at DESC NULLS LAST "
+            f"LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
+            *args, per_page, offset,
+        )
+    out = []
+    for r in rows:
+        ppu = float(r["price_per_unit"]) if r["price_per_unit"] is not None else None
+        qty = r["quantity"]
+        out.append({
+            "lot_number": r["lot_number"],
+            "name": r["name"],
+            "status": r["match_status"],
+            "site": r["site"],
+            "lot_price": ppu,
+            "quantity": qty,
+            "lot_sum": (ppu * qty) if (ppu is not None and qty) else None,
+            "found_price": r["found_price"],
+            "is_closed": r["is_closed"],
+            "collected_at": r["collected_at"].isoformat() if r["collected_at"] else None,
+        })
+    return {
+        "total": total or 0,
+        "page": page,
+        "per_page": per_page,
+        "pages": ((total or 0) + per_page - 1) // per_page,
+        "lots": out,
+    }
+
+
+@app.get("/api/admin/lot/{lot_number}")
+async def admin_lot_detail(lot_number: str, _: None = Depends(check_admin)):
+    """Полная карточка одного лота: ТЗ, анкета Олламы, найденный товар, цена."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        r = await con.fetchrow(
+            "SELECT lot_number, name, customer, price_per_unit, quantity, unit, "
+            "deadline, raw_spec, structured_spec, match_status, match_result, "
+            "found_url, stage, is_closed, collected_at, last_seen "
+            "FROM tenders WHERE lot_number = $1", lot_number
+        )
+    if not r:
+        raise HTTPException(status_code=404, detail="Лот не найден")
+    ppu = float(r["price_per_unit"]) if r["price_per_unit"] is not None else None
+    qty = r["quantity"]
+    return {
+        "lot_number": r["lot_number"],
+        "name": r["name"],
+        "customer": r["customer"],
+        "lot_price": ppu,
+        "quantity": qty,
+        "unit": r["unit"],
+        "lot_sum": (ppu * qty) if (ppu is not None and qty) else None,
+        "deadline": r["deadline"].isoformat() if r["deadline"] else None,
+        "raw_spec": r["raw_spec"],
+        "structured_spec": _jload(r["structured_spec"]),
+        "match_status": r["match_status"],
+        "match_result": _jload(r["match_result"]),
+        "found_url": r["found_url"],
+        "stage": r["stage"],
+        "is_closed": r["is_closed"],
+        "collected_at": r["collected_at"].isoformat() if r["collected_at"] else None,
+        "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
+    }
+
+
 @app.get("/admin")
 async def admin_page():
     return FileResponse(str(STATIC_DIR / "admin.html"))
