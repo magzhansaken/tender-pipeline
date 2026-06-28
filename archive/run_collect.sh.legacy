@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+REPO=/opt/tenderview/tender-pipeline
+LOG=/opt/tenderview/collect.log
+cd /opt/tenderview
+echo "===== $(date) START =====" >> "$LOG"
+git -C "$REPO" pull --quiet >> "$LOG" 2>&1 || true
+docker run --rm -v "$REPO":/app -w /app \
+  -e MAX_PAGES="${MAX_PAGES:-132}" -e OUTPUT_FILE=techspecs_auto.csv \
+  -e PYTHONUTF8=1 -e PYTHONIOENCODING=utf-8 \
+  python:3.12-slim bash -c "pip install -q requests beautifulsoup4 pdfplumber && python techspec_dumper.py" >> "$LOG" 2>&1
+docker compose cp "$REPO"/load_tenders.py app:/tmp/load_tenders.py >> "$LOG" 2>&1
+docker compose cp "$REPO"/techspecs_auto.csv app:/tmp/techspecs_auto.csv >> "$LOG" 2>&1
+docker compose exec -T app python /tmp/load_tenders.py /tmp/techspecs_auto.csv >> "$LOG" 2>&1
+docker compose exec -T -e PGPASSWORD=Tv7xK9pQm2wLrB db psql -U tender -d tender \
+  -c "UPDATE tenders SET is_closed=true WHERE deadline IS NOT NULL AND deadline < now();" >> "$LOG" 2>&1
+echo "===== $(date) DONE =====" >> "$LOG"

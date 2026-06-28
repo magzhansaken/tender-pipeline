@@ -1,0 +1,17 @@
+#!/bin/bash
+REPO=/opt/tenderview/tender-pipeline
+LOG=/opt/tenderview/loader.log
+PG=Tv7xK9pQm2wLrB
+CSV="$REPO/techspecs_auto.csv"
+cd /opt/tenderview || exit 0
+[ -f "$CSV" ] || exit 0
+NOW=$(wc -l < "$CSV")
+LAST=$(cat /opt/tenderview/.loader_lastcount 2>/dev/null || echo 0)
+[ "$NOW" = "$LAST" ] && exit 0
+echo "$NOW" > /opt/tenderview/.loader_lastcount
+echo "===== $(date) load: $NOW строк в CSV =====" >> "$LOG"
+cp "$CSV" "$REPO/snap.csv"
+docker compose cp "$REPO/load_tenders.py" app:/tmp/load_tenders.py >> "$LOG" 2>&1
+docker compose cp "$REPO/snap.csv" app:/tmp/snap.csv >> "$LOG" 2>&1
+docker compose exec -T app python /tmp/load_tenders.py /tmp/snap.csv >> "$LOG" 2>&1
+docker compose exec -T -e PGPASSWORD=$PG db psql -U tender -d tender -c "UPDATE tenders SET is_closed=true WHERE deadline IS NOT NULL AND deadline < now();" >> "$LOG" 2>&1

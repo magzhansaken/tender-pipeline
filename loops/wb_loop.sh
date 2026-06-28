@@ -26,5 +26,5 @@ docker run -d --name wb_worker --network tenderview_default \
   -e DATABASE_URL=postgresql://tender:$PG@db:5432/tender \
   -e WB_LIMIT=40 -e WB_ATTEMPTS=2 -e WB_MAX_TRIES=2 -e PYTHONUNBUFFERED=1 \
   python:3.12-slim bash -c \
-  "pip install -q playwright psycopg2-binary >/dev/null 2>&1 && playwright install chromium >/dev/null 2>&1 && playwright install-deps chromium >/dev/null 2>&1 && python wb_pass.py" \
+  "pip install -q playwright psycopg2-binary >/dev/null 2>&1 && playwright install chromium >/dev/null 2>&1 && playwright install-deps chromium >/dev/null 2>&1 && python src/wb_pass.py" \
   >> "$LOG" 2>&1

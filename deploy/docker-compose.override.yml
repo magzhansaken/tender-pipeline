@@ -1,0 +1,6 @@
+services:
+  app:
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    volumes:
+      - /opt/tenderview:/hostlogs:ro

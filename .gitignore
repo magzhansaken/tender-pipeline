@@ -1,0 +1,33 @@
+# ── Секреты ──
+.env
+*.env
+!.env.example
+
+# ── Данные пайплайна (не версионируем — генерируются) ──
+*.csv
+*.json
+!package.json
+snap.csv
+techspecs*.csv
+.loader_lastcount
+
+# ── HTML-дампы отладки ──
+*_debug.html
+wb_debug.html
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── ОС / редакторы ──
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ── Логи ──
+*.log

@@ -17,5 +17,5 @@ docker run -d --name daily_sync_worker --network tenderview_default \
   -e DATABASE_URL=postgresql://tender:$PG@db:5432/tender \
   -v "$REPO":/app -w /app \
   python:3.12-slim bash -c \
-  "pip install -q requests beautifulsoup4 pdfplumber python-docx asyncpg >/dev/null 2>&1 && python daily_sync.py" \
+  "pip install -q requests beautifulsoup4 pdfplumber python-docx asyncpg >/dev/null 2>&1 && python src/daily_sync.py" \
   >> "$LOG" 2>&1

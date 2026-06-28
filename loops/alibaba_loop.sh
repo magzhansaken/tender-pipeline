@@ -29,5 +29,5 @@ docker run -d --name alibaba_worker --network tenderview_default \
   -e DATABASE_URL=postgresql://tender:$PG@db:5432/tender \
   -e ALI_HARD_CAP=30 -e ALI_RETRIES=8 -e ALI_MAX_TRIES=5 -e PYTHONUNBUFFERED=1 \
   python:3.12-slim bash -c \
-  "pip install -q curl_cffi requests psycopg2-binary ollama >/dev/null 2>&1 && python alibaba_pass.py" \
+  "pip install -q curl_cffi requests psycopg2-binary ollama >/dev/null 2>&1 && python src/alibaba_pass.py" \
   >> "$LOG" 2>&1
