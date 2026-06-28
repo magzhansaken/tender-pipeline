@@ -92,6 +92,40 @@
   .err{color:var(--red);font-size:13px;margin-top:10px;min-height:18px}
   .hidden{display:none}
   @media(max-width:640px){.cards{grid-template-columns:1fr}.srow .sn{width:120px}}
+  /* ── Лоты ── */
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+  .filters select,.filters input{background:var(--bg);border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
+  .filters input[type=text],.filters input:not([type]){min-width:220px}
+  .filters .chk{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:12px;cursor:pointer}
+  .btn.ghost{background:transparent}
+  table.lots{width:100%;border-collapse:collapse;font-size:13px}
+  table.lots th{text-align:left;color:var(--faint);font-weight:600;padding:8px 10px;
+    border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+  table.lots td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.lots tbody tr{cursor:pointer}
+  table.lots tbody tr:hover{background:var(--panel2)}
+  table.lots td.name{max-width:280px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .b-exact{background:#163a26;color:#4ade80}
+  .b-partial{background:#3a3416;color:#fbbf24}
+  .b-notfound{background:#3a1d1d;color:#f87171}
+  .b-other{background:#2a3340;color:#9aa7b8}
+  .lots-meta{color:var(--faint);font-size:12px;margin-bottom:10px}
+  .pager{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:16px}
+  .pager .btn[disabled]{opacity:.4;cursor:default}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:flex-start;
+    justify-content:center;padding:40px 20px;z-index:100;overflow:auto}
+  .modal-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;
+    max-width:760px;width:100%;position:relative}
+  .modal-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--faint);
+    font-size:20px;cursor:pointer;line-height:1}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;font-size:13px;margin:10px 0}
+  .kv .k{color:var(--faint)}
+  .spec-box{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;
+    font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto;color:var(--ink);line-height:1.5}
+  .dlbl{font-size:11px;text-transform:uppercase;color:var(--faint);margin:18px 0 4px;
+    font-weight:600;letter-spacing:.03em}
 </style>
 </head>
 <body>
@@ -120,10 +154,12 @@
     </header>
 
     <div class="nav">
-      <a href="#" class="on">Здоровье пайплайна</a>
+      <a href="#" class="on" id="tab-health" onclick="switchView('health');return false">Здоровье пайплайна</a>
+      <a href="#" id="tab-lots" onclick="switchView('lots');return false">Лоты</a>
       <a href="/" >← На витрину</a>
     </div>
 
+    <div id="view-health">
     <!-- свежесть -->
     <div class="cards" id="cards"></div>
 
@@ -153,6 +189,38 @@
       <h2>Воркеры (фоновые задачи)</h2>
       <p class="hint">Когда каждая cron-задача последний раз писала в лог и что именно. Зелёный — в норме, жёлтый — запаздывает, красный — давно молчит.</p>
       <div id="workers"></div>
+    </div>
+    </div><!-- /view-health -->
+
+    <div id="view-lots" class="hidden">
+      <div class="section">
+        <h2>Лоты</h2>
+        <p class="hint">Все тендеры из базы. Сортировка: сначала с ценой и точным совпадением. Клик по строке — детали лота.</p>
+        <div class="filters">
+          <select id="f-status"><option value="">Все статусы</option></select>
+          <select id="f-price">
+            <option value="">Цена: любая</option>
+            <option value="true">С ценой</option>
+            <option value="false">Без цены</option>
+          </select>
+          <select id="f-site"><option value="">Все площадки</option></select>
+          <input type="text" id="f-q" placeholder="Поиск по названию или номеру" onkeydown="if(event.key==='Enter')applyFilters()" />
+          <input type="number" id="f-minsum" placeholder="Сумма от, ₸" />
+          <label class="chk"><input type="checkbox" id="f-closed"/> вкл. закрытые</label>
+          <button class="btn" onclick="applyFilters()">Применить</button>
+          <button class="btn ghost" onclick="resetFilters()">Сброс</button>
+        </div>
+        <div id="lots-meta" class="lots-meta"></div>
+        <div id="lots-table"></div>
+        <div id="lots-pager" class="pager"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="lot-modal" class="modal hidden" onclick="if(event.target===this)closeLot()">
+    <div class="modal-box">
+      <button class="modal-x" onclick="closeLot()">✕</button>
+      <div id="lot-detail"></div>
     </div>
   </div>
 
@@ -376,6 +444,138 @@ async function load(){
 if(token){ load(); } else { show("gate"); }
 // автообновление раз в 60с
 setInterval(()=>{ if(token && !document.getElementById("app").classList.contains("hidden")) load(); }, 60000);
+// ─────────── Лоты (раздел 1.4) ───────────
+let lotsPage = 1;
+let lotsLoaded = false;
+
+function switchView(v){
+  document.getElementById("view-health").classList.toggle("hidden", v!=="health");
+  document.getElementById("view-lots").classList.toggle("hidden", v!=="lots");
+  document.getElementById("tab-health").classList.toggle("on", v==="health");
+  document.getElementById("tab-lots").classList.toggle("on", v==="lots");
+  if(v==="lots" && !lotsLoaded){ initLots(); }
+}
+
+async function initLots(){
+  lotsLoaded = true;
+  try{
+    const r = await fetch("/api/admin/lot-filter-options", {headers:{"X-Admin-Token": token}});
+    const d = await r.json();
+    const fs = document.getElementById("f-status");
+    (d.statuses||[]).forEach(s=>{ const o=document.createElement("option"); o.value=s.value; o.textContent=s.value+" ("+fmt(s.count)+")"; fs.appendChild(o); });
+    const si = document.getElementById("f-site");
+    (d.sites||[]).forEach(s=>{ const o=document.createElement("option"); o.value=s.value; o.textContent=s.value+" ("+fmt(s.count)+")"; si.appendChild(o); });
+  }catch(e){}
+  loadLots();
+}
+
+function applyFilters(){ lotsPage = 1; loadLots(); }
+function resetFilters(){
+  ["f-status","f-price","f-site","f-q","f-minsum"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("f-closed").checked=false;
+  lotsPage=1; loadLots();
+}
+
+async function loadLots(){
+  const p = new URLSearchParams();
+  const g = id => document.getElementById(id).value;
+  if(g("f-status")) p.set("status", g("f-status"));
+  if(g("f-price")) p.set("has_price", g("f-price"));
+  if(g("f-site")) p.set("site", g("f-site"));
+  if(g("f-q").trim()) p.set("q", g("f-q").trim());
+  if(g("f-minsum")) p.set("min_sum", g("f-minsum"));
+  if(document.getElementById("f-closed").checked) p.set("closed","true");
+  p.set("page", lotsPage); p.set("per_page", 50);
+  document.getElementById("lots-table").innerHTML = "<p class='hint'>Загрузка…</p>";
+  document.getElementById("lots-pager").innerHTML = "";
+  try{
+    const r = await fetch("/api/admin/lots?"+p.toString(), {headers:{"X-Admin-Token": token}});
+    if(!r.ok){ document.getElementById("lots-table").innerHTML="<p class='err'>Ошибка "+r.status+"</p>"; return; }
+    renderLots(await r.json());
+  }catch(e){ document.getElementById("lots-table").innerHTML = "<p class='err'>Ошибка загрузки</p>"; }
+}
+
+function badge(st){
+  const m={FOUND_EXACT:["b-exact","точное"],FOUND_PARTIAL:["b-partial","частичное"],NOT_FOUND:["b-notfound","не найдено"]};
+  const c=m[st]||["b-other", st||"—"];
+  return "<span class='badge "+c[0]+"'>"+escHtml(c[1])+"</span>";
+}
+
+function renderLots(d){
+  document.getElementById("lots-meta").textContent = "Найдено "+fmt(d.total)+" лотов · страница "+d.page+" из "+(d.pages||1);
+  const tbl = document.getElementById("lots-table");
+  if(!d.lots || !d.lots.length){ tbl.innerHTML="<p class='hint'>Ничего не найдено по фильтрам.</p>"; document.getElementById("lots-pager").innerHTML=""; return; }
+  let h = "<table class='lots'><thead><tr><th>Лот</th><th>Название</th><th>Статус</th><th>Площадка</th><th>Сумма лота</th><th>Найдено</th></tr></thead><tbody>";
+  d.lots.forEach(l=>{
+    h += "<tr onclick=\"openLot('"+escAttr(l.lot_number)+"')\">"+
+      "<td>"+escHtml(l.lot_number)+"</td>"+
+      "<td class='name'>"+escHtml(l.name||"")+"</td>"+
+      "<td>"+badge(l.status)+"</td>"+
+      "<td>"+escHtml(l.site||"—")+"</td>"+
+      "<td>"+(l.lot_sum!=null?fmt(Math.round(l.lot_sum))+" ₸":"—")+"</td>"+
+      "<td>"+(l.found_price!=null?escHtml(String(l.found_price)):"—")+"</td>"+
+    "</tr>";
+  });
+  h += "</tbody></table>";
+  tbl.innerHTML = h;
+  let pg = "<button class='btn' "+(d.page<=1?"disabled":"")+" onclick='lotsPage="+(d.page-1)+";loadLots()'>← Назад</button>";
+  pg += "<span class='hint'>"+d.page+" / "+(d.pages||1)+"</span>";
+  pg += "<button class='btn' "+(d.page>=d.pages?"disabled":"")+" onclick='lotsPage="+(d.page+1)+";loadLots()'>Вперёд →</button>";
+  document.getElementById("lots-pager").innerHTML = pg;
+}
+
+async function openLot(num){
+  const box = document.getElementById("lot-detail");
+  box.innerHTML = "<p class='hint'>Загрузка…</p>";
+  document.getElementById("lot-modal").classList.remove("hidden");
+  try{
+    const r = await fetch("/api/admin/lot/"+encodeURIComponent(num), {headers:{"X-Admin-Token": token}});
+    if(!r.ok){ box.innerHTML="<p class='err'>Лот не найден</p>"; return; }
+    renderLotDetail(await r.json());
+  }catch(e){ box.innerHTML="<p class='err'>Ошибка загрузки</p>"; }
+}
+function closeLot(){ document.getElementById("lot-modal").classList.add("hidden"); }
+
+function renderLotDetail(d){
+  const mr = d.match_result || {};
+  const ss = d.structured_spec || {};
+  const attrs = (ss.attributes||[]).map(a=>((a.name||"")+" "+(a.op||"")+" "+(a.value||"")+" "+(a.unit||"")).trim()).filter(Boolean).join("; ");
+  let h = "<h2 style='margin:0 0 8px'>"+escHtml(d.name||"")+" <span class='hint'>"+escHtml(d.lot_number)+"</span></h2>";
+  h += badge(d.match_status) + (d.is_closed?" <span class='badge b-other'>закрыт</span>":"");
+  h += "<div class='kv'>"+
+    "<div class='k'>Заказчик</div><div>"+escHtml(d.customer||"—")+"</div>"+
+    "<div class='k'>Цена лота (за ед.)</div><div>"+(d.lot_price!=null?fmt(d.lot_price)+" ₸":"—")+"</div>"+
+    "<div class='k'>Количество</div><div>"+(d.quantity!=null?fmt(d.quantity)+" "+escHtml(d.unit||""):"—")+"</div>"+
+    "<div class='k'>Сумма лота</div><div>"+(d.lot_sum!=null?fmt(Math.round(d.lot_sum))+" ₸":"—")+"</div>"+
+    "<div class='k'>Этап</div><div>"+escHtml(d.stage||"—")+"</div>"+
+    "<div class='k'>Собран</div><div>"+(d.collected_at?ago(d.collected_at):"—")+"</div>"+
+  "</div>";
+  h += "<div class='dlbl'>Анкета (Оллама)</div>";
+  h += "<div class='kv'>"+
+    "<div class='k'>Тип товара</div><div>"+escHtml(ss.product_type||"—")+"</div>"+
+    "<div class='k'>Бренд</div><div>"+escHtml(ss.brand||"—")+(ss.brand_required?" <span class='hint'>(требуется)</span>":"")+"</div>"+
+    "<div class='k'>Характеристики</div><div>"+escHtml(attrs||"—")+"</div>"+
+    "<div class='k'>Поисковый запрос</div><div>"+escHtml(ss.search_query||"—")+"</div>"+
+  "</div>";
+  if(d.match_status && d.match_status!=="NOT_FOUND"){
+    h += "<div class='dlbl'>Найденный товар</div>";
+    h += "<div class='kv'>"+
+      "<div class='k'>Название</div><div>"+escHtml(mr.product_name||"—")+"</div>"+
+      "<div class='k'>Бренд / модель</div><div>"+escHtml((mr.brand||"—")+" / "+(mr.model||"—"))+"</div>"+
+      "<div class='k'>Цена</div><div>"+(mr.price!=null?escHtml(String(mr.price)):"—")+"</div>"+
+      "<div class='k'>Площадка</div><div>"+escHtml(mr.source_site||"—")+"</div>"+
+      "<div class='k'>Ссылка</div><div>"+(d.found_url?"<a href='"+escAttr(d.found_url)+"' target='_blank' style='color:#58a6ff'>открыть товар ↗</a>":"—")+"</div>"+
+      "<div class='k'>Уверенность</div><div>"+(mr.confidence!=null?escHtml(String(mr.confidence)):"—")+"</div>"+
+    "</div>";
+    if(mr.reason){ h += "<div class='hint' style='margin-top:6px'>Причина: "+escHtml(mr.reason)+"</div>"; }
+  } else if(mr.reason){
+    h += "<div class='dlbl'>Почему не найдено</div><div class='hint'>"+escHtml(mr.reason)+"</div>";
+  }
+  h += "<div class='dlbl'>ТЗ (исходный текст)</div>";
+  h += "<div class='spec-box'>"+escHtml(d.raw_spec||"(нет)")+"</div>";
+  document.getElementById("lot-detail").innerHTML = h;
+}
+
 </script>
 </body>
 </html>
