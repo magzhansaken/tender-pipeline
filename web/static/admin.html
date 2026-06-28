@@ -131,15 +131,6 @@
 <body>
 <div class="wrap">
 
-  <!-- ВХОД -->
-  <div id="gate" class="gate hidden">
-    <h2>Панель управления</h2>
-    <p>Введите пароль доступа.</p>
-    <input id="pw" type="password" placeholder="Пароль" autocomplete="current-password">
-    <button class="btn" onclick="doLogin()">Войти</button>
-    <div id="gateErr" class="err"></div>
-  </div>
-
   <!-- ПАНЕЛЬ -->
   <div id="app" class="hidden">
     <header>
@@ -150,6 +141,7 @@
       <div style="display:flex;gap:10px;align-items:center">
         <span id="updated" class="updated"></span>
         <button class="btn" onclick="load()">↻ Обновить</button>
+        <button class="btn" onclick="logout()">Выйти</button>
       </div>
     </header>
 
@@ -227,23 +219,23 @@
 </div>
 
 <script>
-const TKEY = "tf_admin_token";
-let token = sessionStorage.getItem(TKEY) || "";
+// Вход — через единую страницу /login. Здесь только токен сессии владельца.
+let token = localStorage.getItem("tf_token") || "";
 
 function show(id){ document.getElementById(id).classList.remove("hidden"); }
 function hide(id){ document.getElementById(id).classList.add("hidden"); }
 
-function doLogin(){
-  const v = document.getElementById("pw").value.trim();
-  if(!v){ return; }
-  token = v;
-  sessionStorage.setItem(TKEY, token);
-  document.getElementById("gateErr").textContent = "";
-  load();
+function goLogin(){
+  localStorage.removeItem("tf_token");
+  localStorage.removeItem("tf_role");
+  localStorage.removeItem("tf_email");
+  location.href = "/login";
 }
-document.addEventListener("keydown", e=>{
-  if(e.key==="Enter" && !document.getElementById("gate").classList.contains("hidden")) doLogin();
-});
+
+async function logout(){
+  try{ await fetch("/api/auth/logout", {method:"POST", headers:{"X-Auth-Token": token}}); }catch(e){}
+  goLogin();
+}
 
 function ago(iso){
   if(!iso) return "—";
@@ -424,24 +416,22 @@ async function load(){
   try{
     const r = await fetch("/api/admin/health", {headers:{"X-Admin-Token": token}});
     if(r.status === 401){
-      sessionStorage.removeItem(TKEY); token = "";
-      hide("app"); show("gate");
-      document.getElementById("gateErr").textContent = "Неверный пароль.";
+      goLogin();
       return;
     }
     if(!r.ok){ throw new Error("HTTP " + r.status); }
     const d = await r.json();
-    hide("gate"); show("app");
+    show("app");
     render(d);
     loadWorkers();
   }catch(e){
-    hide("gate"); show("app");
+    show("app");
     document.getElementById("updated").textContent = "ошибка загрузки: " + e.message;
   }
 }
 
 // старт
-if(token){ load(); } else { show("gate"); }
+if(token){ load(); } else { goLogin(); }
 // автообновление раз в 60с
 setInterval(()=>{ if(token && !document.getElementById("app").classList.contains("hidden")) load(); }, 60000);
 // ─────────── Лоты (раздел 1.4) ───────────

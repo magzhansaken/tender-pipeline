@@ -134,19 +134,24 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
-async def current_user(x_auth_token: str | None = Header(default=None)):
-    """Возвращает пользователя по токену сессии, либо None (не вошёл)."""
-    if not x_auth_token:
+async def _user_by_token(token: str | None):
+    """Ищет активного пользователя по токену сессии. None — нет/протух/заблокирован."""
+    if not token:
         return None
     async with app.state.pool.acquire() as con:
         row = await con.fetchrow(
             "SELECT u.id, u.email, u.role, u.status FROM sessions s "
             "JOIN users u ON u.id = s.user_id "
-            "WHERE s.token_hash = $1 AND s.expires_at > now()", _token_hash(x_auth_token)
+            "WHERE s.token_hash = $1 AND s.expires_at > now()", _token_hash(token)
         )
     if not row or row["status"] != "active":
         return None
     return dict(row)
+
+
+async def current_user(x_auth_token: str | None = Header(default=None)):
+    """Возвращает пользователя по токену сессии, либо None (не вошёл)."""
+    return await _user_by_token(x_auth_token)
 
 
 async def require_user(user=Depends(current_user)):
@@ -337,11 +342,17 @@ async def healthz():
 
 # ─────────── Админ-панель (за паролем ADMIN_PASSWORD из .env) ───────────
 
-def check_admin(x_admin_token: str | None = Header(default=None)):
-    """Простая защита: заголовок X-Admin-Token должен совпасть с ADMIN_PASSWORD.
-    Если пароль не задан в .env — доступ закрыт полностью (безопасно по умолчанию)."""
-    if not ADMIN_PASSWORD or x_admin_token != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Доступ запрещён")
+async def check_admin(x_admin_token: str | None = Header(default=None)):
+    """Доступ к панели: принимает ЛИБО сессию владельца (токен из /login),
+    ЛИБО устаревший пароль ADMIN_PASSWORD (аварийный доступ / curl).
+    И токен, и пароль приходят в одном заголовке X-Admin-Token."""
+    if x_admin_token:
+        if ADMIN_PASSWORD and x_admin_token == ADMIN_PASSWORD:
+            return
+        user = await _user_by_token(x_admin_token)
+        if user and user["role"] == "owner":
+            return
+    raise HTTPException(status_code=401, detail="Доступ запрещён")
 
 
 @app.get("/api/admin/health")
@@ -603,6 +614,11 @@ async def admin_lot_detail(lot_number: str, _: None = Depends(check_admin)):
         "collected_at": r["collected_at"].isoformat() if r["collected_at"] else None,
         "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
     }
+
+
+@app.get("/login")
+async def login_page():
+    return FileResponse(str(STATIC_DIR / "login.html"))
 
 
 @app.get("/admin")

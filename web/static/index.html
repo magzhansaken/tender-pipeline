@@ -149,10 +149,18 @@
     .top{flex-direction:column-reverse; align-items:flex-start}
     .badge{align-self:flex-start}
   }
+  .authbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:8px;min-height:26px;font-size:13px}
+  .authbar .who{color:var(--muted)}
+  .authbar a,.authbar button{color:var(--accent);background:none;border:1px solid var(--line-2);
+    border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
+  .authbar a:hover,.authbar button:hover{border-color:var(--accent)}
+  .authbar .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .authbar .btn-primary:hover{background:var(--accent-ink)}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div class="authbar" id="authbar"></div>
   <header>
     <h1>Подобранные лоты</h1>
     <p>Обработано автоматически из госзакупок · обновляется ежедневно</p>
@@ -354,6 +362,35 @@ $("#next").addEventListener("click", () => { state.offset += state.limit; load()
 
 loadStats();
 load();
+
+// ── строка входа (Фаза 2.1) ──
+(async function(){
+  const bar = document.getElementById("authbar");
+  if(!bar) return;
+  const token = localStorage.getItem("tf_token");
+  function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  if(token){
+    try{
+      const r = await fetch("/api/auth/me", {headers:{"X-Auth-Token": token}});
+      if(r.ok){
+        const d = await r.json();
+        bar.innerHTML = '<span class="who">'+esc(d.email)+'</span>'
+          + (d.role==="owner" ? '<a href="/admin">Панель</a>' : '')
+          + '<button id="tfLogout">Выйти</button>';
+        document.getElementById("tfLogout").onclick = async function(){
+          try{ await fetch("/api/auth/logout",{method:"POST",headers:{"X-Auth-Token":token}}); }catch(e){}
+          localStorage.removeItem("tf_token");
+          localStorage.removeItem("tf_role");
+          localStorage.removeItem("tf_email");
+          location.reload();
+        };
+        return;
+      }
+      localStorage.removeItem("tf_token");
+    }catch(e){}
+  }
+  bar.innerHTML = '<a class="btn-primary" href="/login">Войти</a>';
+})();
 </script>
 </body>
 </html>

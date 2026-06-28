@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>TenderFinder — вход</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --surface:#ffffff; --line:#e6e8ec; --line-2:#d4d8df;
+    --ink:#10141d; --muted:#5b6472; --faint:#969eaa;
+    --accent:#0e7c6b; --accent-ink:#0a584c; --accent-soft:#e3f3f0;
+    --bad:#b23128; --bad-bg:#fbeceb;
+    --brand-1:#0a584c; --brand-2:#062f29; --brand-ink:#dff3ee; --brand-faint:#7db8ad;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1116; --surface:#161b22; --line:#262d38; --line-2:#333c49;
+      --ink:#e7eaef; --muted:#9aa4b2; --faint:#6b7585;
+      --accent:#34b3a0; --accent-ink:#7fd6c8; --accent-soft:#13241f;
+      --bad:#e57368; --bad-bg:#2a1614;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:15px;line-height:1.5;display:flex}
+
+  /* раскладка сплит-экран */
+  .split{display:flex;width:100%;min-height:100%}
+  .pane-brand{flex:1.05;background:linear-gradient(150deg,var(--brand-1),var(--brand-2));
+    color:var(--brand-ink);padding:56px 52px;display:flex;flex-direction:column;justify-content:space-between;
+    position:relative;overflow:hidden}
+  .pane-form{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 28px}
+
+  /* брендовая часть */
+  .logo{display:flex;align-items:center;gap:11px;font-weight:700;font-size:18px;letter-spacing:-.01em}
+  .logo .mark{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.18)}
+  .logo .mark svg{width:17px;height:17px}
+  .brand-mid{max-width:430px}
+  .brand-mid h1{font-size:34px;line-height:1.18;margin:0 0 16px;font-weight:680;letter-spacing:-.02em}
+  .brand-mid h1 em{font-style:normal;color:#9be8d8}
+  .brand-mid p{color:var(--brand-faint);font-size:15px;margin:0 0 30px;max-width:380px}
+  .steps{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+  .steps li{display:flex;align-items:flex-start;gap:12px;font-size:14.5px}
+  .steps .n{flex:0 0 auto;width:24px;height:24px;border-radius:7px;background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#9be8d8;margin-top:1px}
+  .steps b{font-weight:600;color:var(--brand-ink)}
+  .steps span{color:var(--brand-faint)}
+  .brand-foot{font-size:12.5px;color:var(--brand-faint)}
+  .glow{position:absolute;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle,rgba(80,220,195,.18),transparent 70%);
+    bottom:-120px;right:-90px;pointer-events:none}
+
+  /* форма */
+  .card{width:100%;max-width:370px}
+  .tabs{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:4px;margin-bottom:24px}
+  .tabs button{flex:1;border:none;background:none;color:var(--muted);font:inherit;font-weight:600;
+    font-size:14px;padding:9px;border-radius:7px;cursor:pointer;transition:.15s}
+  .tabs button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .card h2{font-size:21px;margin:0 0 4px;font-weight:680;letter-spacing:-.01em}
+  .card .lead{color:var(--muted);font-size:13.5px;margin:0 0 22px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px}
+  .field{margin-bottom:16px}
+  .field input{width:100%;padding:11px 13px;background:var(--surface);border:1px solid var(--line-2);
+    border-radius:9px;color:var(--ink);font:inherit;font-size:15px;transition:.15s}
+  .field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .pw-wrap{position:relative}
+  .pw-wrap input{padding-right:64px}
+  .pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;
+    color:var(--faint);font:inherit;font-size:12px;font-weight:600;cursor:pointer;padding:6px 8px}
+  .pw-toggle:hover{color:var(--accent)}
+  .submit{width:100%;padding:12px;background:var(--accent);border:none;border-radius:9px;color:#fff;
+    font:inherit;font-size:15px;font-weight:650;cursor:pointer;transition:.15s;margin-top:4px}
+  .submit:hover{background:var(--accent-ink)}
+  .submit:disabled{opacity:.6;cursor:default}
+  .msg{font-size:13px;margin-top:14px;min-height:18px}
+  .msg.err{color:var(--bad)}
+  .msg.ok{color:var(--accent)}
+  .switch{margin-top:20px;font-size:13.5px;color:var(--muted);text-align:center}
+  .switch a{color:var(--accent);cursor:pointer;text-decoration:none;font-weight:600}
+  .hint-pw{font-size:12px;color:var(--faint);margin-top:6px}
+
+  @media (max-width:860px){
+    .split{flex-direction:column}
+    .pane-brand{flex:none;padding:32px 26px}
+    .brand-mid{display:none}
+    .pane-form{flex:1;padding:32px 22px}
+  }
+</style>
+</head>
+<body>
+<div class="split">
+
+  <!-- БРЕНД / ЦЕННОСТЬ -->
+  <div class="pane-brand">
+    <div class="logo">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#9be8d8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </span>
+      TenderFinder
+    </div>
+
+    <div class="brand-mid">
+      <h1>Тендеры госзакупок —<br><em>с ценой и маржой</em></h1>
+      <p>Сервис находит лоты на goszakup.gov.kz, подбирает товар на маркетплейсах и считает выгоду — чтобы вы видели, на чём заработать.</p>
+      <ol class="steps">
+        <li><span class="n">1</span><div><b>Сбор лотов</b> <span>— ежедневная сверка с goszakup.gov.kz</span></div></li>
+        <li><span class="n">2</span><div><b>Подбор товара</b> <span>— поиск на Kaspi, Satu, Wildberries, Alibaba и др.</span></div></li>
+        <li><span class="n">3</span><div><b>Цена и маржа</b> <span>— автоматический расчёт по каждому лоту</span></div></li>
+      </ol>
+    </div>
+
+    <div class="brand-foot">Закрытый доступ для участников госзакупок</div>
+    <div class="glow"></div>
+  </div>
+
+  <!-- ФОРМА -->
+  <div class="pane-form">
+    <div class="card">
+      <div class="tabs">
+        <button id="tab-login" class="on" onclick="setMode('login')">Вход</button>
+        <button id="tab-reg" onclick="setMode('register')">Регистрация</button>
+      </div>
+
+      <h2 id="formTitle">С возвращением</h2>
+      <p class="lead" id="formLead">Войдите, чтобы открыть подобранные тендеры.</p>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" placeholder="you@company.kz" onkeydown="if(event.key==='Enter')document.getElementById('pw').focus()">
+      </div>
+
+      <div class="field">
+        <label for="pw">Пароль</label>
+        <div class="pw-wrap">
+          <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')submitForm()">
+          <button type="button" class="pw-toggle" onclick="togglePw()">показать</button>
+        </div>
+        <div class="hint-pw" id="pwHint" style="display:none">Минимум 8 символов</div>
+      </div>
+
+      <button class="submit" id="submitBtn" onclick="submitForm()">Войти</button>
+      <div class="msg" id="msg"></div>
+
+      <div class="switch" id="switch">
+        Нет аккаунта? <a onclick="setMode('register')">Зарегистрироваться</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let mode = "login";
+
+function setMode(m){
+  mode = m;
+  const login = m === "login";
+  document.getElementById("tab-login").classList.toggle("on", login);
+  document.getElementById("tab-reg").classList.toggle("on", !login);
+  document.getElementById("formTitle").textContent = login ? "С возвращением" : "Создать аккаунт";
+  document.getElementById("formLead").textContent = login
+    ? "Войдите, чтобы открыть подобранные тендеры."
+    : "Зарегистрируйтесь, чтобы видеть цены и маржу по лотам.";
+  document.getElementById("submitBtn").textContent = login ? "Войти" : "Создать аккаунт";
+  document.getElementById("pw").setAttribute("autocomplete", login ? "current-password" : "new-password");
+  document.getElementById("pwHint").style.display = login ? "none" : "block";
+  document.getElementById("switch").innerHTML = login
+    ? 'Нет аккаунта? <a onclick="setMode(\'register\')">Зарегистрироваться</a>'
+    : 'Уже есть аккаунт? <a onclick="setMode(\'login\')">Войти</a>';
+  setMsg("");
+}
+
+function togglePw(){
+  const i = document.getElementById("pw");
+  const b = document.querySelector(".pw-toggle");
+  if(i.type === "password"){ i.type = "text"; b.textContent = "скрыть"; }
+  else { i.type = "password"; b.textContent = "показать"; }
+}
+
+function setMsg(text, kind){
+  const m = document.getElementById("msg");
+  m.textContent = text || "";
+  m.className = "msg" + (kind ? " " + kind : "");
+}
+
+async function submitForm(){
+  const email = document.getElementById("email").value.trim();
+  const pw = document.getElementById("pw").value;
+  if(!email){ setMsg("Введите email", "err"); return; }
+  if(!pw){ setMsg("Введите пароль", "err"); return; }
+  if(mode === "register" && pw.length < 8){ setMsg("Пароль минимум 8 символов", "err"); return; }
+
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  setMsg(mode === "login" ? "Входим…" : "Создаём аккаунт…");
+  const ep = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+  try{
+    const r = await fetch(ep, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email, password: pw})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      setMsg(d.detail || "Не удалось войти", "err");
+      btn.disabled = false;
+      return;
+    }
+    localStorage.setItem("tf_token", d.token);
+    localStorage.setItem("tf_role", d.role);
+    localStorage.setItem("tf_email", d.email);
+    setMsg("Готово, перенаправляем…", "ok");
+    location.href = (d.role === "owner") ? "/admin" : "/";
+  }catch(e){
+    setMsg("Ошибка соединения", "err");
+    btn.disabled = false;
+  }
+}
+
+// если уже вошёл — мягко предложить перейти (без принудительного редиректа)
+(function(){
+  const t = localStorage.getItem("tf_token"), role = localStorage.getItem("tf_role");
+  if(t && role){
+    setMsg("Вы уже вошли. " , "ok");
+    const m = document.getElementById("msg");
+    const a = document.createElement("a");
+    a.textContent = role === "owner" ? "Открыть панель →" : "Открыть витрину →";
+    a.style.cssText = "color:var(--accent);cursor:pointer;font-weight:600";
+    a.onclick = ()=>{ location.href = role === "owner" ? "/admin" : "/"; };
+    m.appendChild(a);
+  }
+})();
+</script>
+</body>
+</html>
