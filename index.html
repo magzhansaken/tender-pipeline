@@ -229,7 +229,7 @@ function unitOf(u){ u=(u||"").trim(); return (!u || u.length>6) ? "ед." : u; }
 function priceBlock(it){
   if(it.margin==null && it.margin_pct==null && it.lot_price==null) return "";
   let s = "";
-  if(it.lot_price!=null) s += `Лот <b>${money(it.lot_price)}</b> `;
+  if(it.lot_price!=null) s += `Лот <b>${money(it.lot_price)}</b>${it.quantity?` <span style="color:var(--faint)">× ${(it.quantity).toLocaleString("ru-RU")} ${unitOf(it.unit)}</span>`:""} `;
   if(it.purchase_price!=null) s += `· закуп <b>${money(it.purchase_price)}</b> `;
   if(it.margin!=null){
     const cls = it.margin>=0 ? "pos":"neg";
@@ -285,7 +285,6 @@ function card(it){
         <span class="badge ${st.cls}">${esc(st.label)}</span>
       </div>
       ${found}
-      ${it.quantity ? `<div style="font-size:13px;color:var(--faint);margin-top:4px">Количество: <b>${(it.quantity).toLocaleString("ru-RU")} ${unitOf(it.unit)}</b></div>` : ""}
       <div class="row2">
         <div class="conf">
           <span class="lbl">уверенность</span>
