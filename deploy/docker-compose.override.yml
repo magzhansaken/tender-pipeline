@@ -2,5 +2,7 @@ services:
   app:
     environment:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
     volumes:
       - /opt/tenderview:/hostlogs:ro
