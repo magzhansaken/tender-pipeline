@@ -103,6 +103,18 @@
   .ftable .r{text-align:right}
   .ftable td b{color:var(--ink)}
   @media(max-width:560px){.prow .pl{flex-basis:110px}}
+  /* Тренды (3.3) */
+  .range-pills{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .rpill{font:inherit;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);
+    border:1px solid var(--line);border-radius:9px;padding:8px 15px;cursor:pointer}
+  .rpill:hover{border-color:var(--accent);color:var(--ink)}
+  .rpill.on{background:var(--accent);color:#06231f;border-color:var(--accent)}
+  .tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .tcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px 10px}
+  .tcard .tlbl{font-size:12px;color:var(--faint);margin-bottom:5px}
+  .tcard .tval{font-size:21px;font-weight:680;letter-spacing:-.02em;color:var(--ink);display:flex;align-items:baseline;gap:9px;margin-bottom:8px}
+  .spark-empty{height:92px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12.5px;
+    text-align:center;border:1px dashed var(--line-2);border-radius:9px;padding:0 12px}
 
   /* ── Воронка ── */
   .stage{margin:0 0 14px}
@@ -238,6 +250,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
         <span>Доходы</span>
       </a>
+      <a href="#" class="navitem" id="nav-trends" onclick="switchView('trends');return false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+        <span>Тренды</span>
+      </a>
     </nav>
     <div class="sidebar-foot">
       <div class="who" id="whoEmail"></div>
@@ -292,6 +308,11 @@
       <!-- ДОХОДЫ -->
       <section id="view-biz" class="hidden">
         <div id="biz-root"><p class="hint">Загрузка…</p></div>
+      </section>
+
+      <!-- ТРЕНДЫ -->
+      <section id="view-trends" class="hidden">
+        <div id="trends-root"><p class="hint">Загрузка…</p></div>
       </section>
 
       <!-- ЛОТЫ -->
@@ -579,15 +600,16 @@ async function load(){
 }
 
 // ── Навигация между разделами ──
-const VIEW_TITLES = {overview:"Обзор", lots:"Лоты", clients:"Клиенты", biz:"Доходы"};
+const VIEW_TITLES = {overview:"Обзор", lots:"Лоты", clients:"Клиенты", biz:"Доходы", trends:"Тренды"};
 const VIEW_CRUMBS = {
   overview:"Здоровье пайплайна сбора и публикации",
   lots:"Все тендеры из базы — поиск и детали",
   clients:"Аккаунты пользователей и доступ",
   biz:"Деньги бизнеса: MRR, выручка, отток, LTV",
+  trends:"Динамика во времени: рост, выручка, витрина, маржа",
 };
 function switchView(v){
-  ["overview","lots","clients","biz"].forEach(name=>{
+  ["overview","lots","clients","biz","trends"].forEach(name=>{
     document.getElementById("view-"+name).classList.toggle("hidden", name!==v);
     document.getElementById("nav-"+name).classList.toggle("on", name===v);
   });
@@ -596,12 +618,14 @@ function switchView(v){
   if(v==="lots" && !lotsLoaded){ initLots(); }
   if(v==="clients" && !clientsLoaded){ clientsLoaded = true; loadClients(); }
   if(v==="biz" && !bizLoaded){ bizLoaded = true; loadBiz(); }
+  if(v==="trends" && !trendsLoaded){ trendsLoaded = true; loadTrends(); }
 }
 function refreshCurrent(){
-  const active = ["overview","lots","clients","biz"].find(n=>!document.getElementById("view-"+n).classList.contains("hidden"));
+  const active = ["overview","lots","clients","biz","trends"].find(n=>!document.getElementById("view-"+n).classList.contains("hidden"));
   if(active==="lots") loadLots();
   else if(active==="clients") loadClients();
   else if(active==="biz") loadBiz();
+  else if(active==="trends") loadTrends();
   else load();
 }
 
@@ -843,6 +867,72 @@ function renderBiz(d){
     "<div class='section'><h2>Выручка по месяцам</h2><p class='hint'>Сумма оплат за каждый месяц, последние 12 мес.</p>"+revBars(d.timeseries)+"</div>"+
     "<div class='section'><h2>MRR по тарифам</h2><p class='hint'>Из чего складывается ежемесячный доход (годовые приведены к месяцу).</p>"+planBars(d.by_plan)+"</div>"+
     "<div class='section'><h2>Последние оплаты</h2><p class='hint'>Лента событий по деньгам.</p>"+feedRows(d.feed)+"</div>";
+}
+
+// ─────────── Тренды (Фаза 3.3) ───────────
+let trendsLoaded = false, trendsRange = 90;
+const TC = {blue:"#5b9bf0", green:"#34d399", teal:"#2dd4bf", indigo:"#7c8cf8", amber:"#fbbf24", violet:"#a78bfa"};
+function spark(values, color){
+  const pts = values.filter(v=>v!=null);
+  if(pts.length<2) return "<div class='spark-empty'>Копится — точки на графике добавляются каждый день</div>";
+  const W=320,H=92,pad=6;
+  const max=Math.max.apply(null,pts), min=Math.min.apply(null,pts), span=(max-min)||1;
+  const stepX=(W-pad*2)/(pts.length-1);
+  const Y=v=>H-pad-((v-min)/span)*(H-pad*2);
+  let line="", area="M"+pad+","+(H-pad).toFixed(1)+" ";
+  pts.forEach((v,i)=>{ const x=pad+i*stepX, y=Y(v);
+    line+=(i?"L":"M")+x.toFixed(1)+","+y.toFixed(1)+" "; area+="L"+x.toFixed(1)+","+y.toFixed(1)+" "; });
+  area+="L"+(pad+(pts.length-1)*stepX).toFixed(1)+","+(H-pad).toFixed(1)+" Z";
+  const id="sp"+Math.random().toString(36).slice(2,7);
+  return "<svg viewBox='0 0 "+W+" "+H+"' preserveAspectRatio='none' style='width:100%;height:92px;display:block'>"+
+    "<defs><linearGradient id='"+id+"' x1='0' y1='0' x2='0' y2='1'>"+
+    "<stop offset='0' stop-color='"+color+"' stop-opacity='0.26'/>"+
+    "<stop offset='1' stop-color='"+color+"' stop-opacity='0'/></linearGradient></defs>"+
+    "<path d='"+area+"' fill='url(#"+id+")'/>"+
+    "<path d='"+line+"' fill='none' stroke='"+color+"' stroke-width='2' stroke-linejoin='round' stroke-linecap='round'/></svg>";
+}
+function trendCard(title, valueStr, deltaStr, color, sparkSvg){
+  const delta = deltaStr ? "<span class='delta up'>"+deltaStr+"</span>" : "";
+  return "<div class='tcard'><div class='tlbl'>"+title+"</div><div class='tval'>"+valueStr+delta+"</div>"+sparkSvg+"</div>";
+}
+function rangePills(cur){
+  const opts=[[30,"30 дней"],[90,"90 дней"],[365,"Год"],[0,"Всё время"]];
+  return "<div class='range-pills'>"+opts.map(o=>"<button class='rpill"+(o[0]===cur?" on":"")+"' onclick='loadTrends("+o[0]+")'>"+o[1]+"</button>").join("")+"</div>";
+}
+function renderTrends(d){
+  const seedCum=(arr,key)=> arr.length ? [arr[0].cum-arr[0][key]].concat(arr.map(p=>p.cum)) : [];
+  const sg = seedCum(d.signups,"new");
+  const rv = seedCum(d.revenue,"amount");
+  const pub = d.snapshots.map(s=>s.published);
+  const prc = d.snapshots.map(s=>s.priced);
+  const mar = d.snapshots.map(s=>s.avg_margin);
+  const thr = d.throughput.map(p=>p.n);
+  const t = d.today;
+  const newClients = d.signups.reduce((a,p)=>a+p.new,0);
+  const revIn = d.revenue.reduce((a,p)=>a+p.amount,0);
+  const lastThr = thr.length ? thr[thr.length-1] : 0;
+  document.getElementById("trends-root").innerHTML =
+    rangePills(d.range_days)+
+    "<div class='tgrid'>"+
+      trendCard("Клиентов всего", fmt(t.users_total), (newClients?"+"+fmt(newClients):""), TC.blue, spark(sg,TC.blue))+
+      trendCard("Выручка, всего", money(t.revenue_total), (revIn?"+"+money(revIn):""), TC.green, spark(rv,TC.green))+
+      trendCard("Тендеров на витрине", fmt(t.published), "", TC.teal, spark(pub,TC.teal))+
+      trendCard("Тендеров с ценой", fmt(t.priced), "", TC.indigo, spark(prc,TC.indigo))+
+      trendCard("Средняя маржа", (t.avg_margin!=null?t.avg_margin+"%":"—"), "", TC.amber, spark(mar,TC.amber))+
+      trendCard("Обработка тендеров/день", fmt(lastThr), "", TC.violet, spark(thr,TC.violet))+
+    "</div>"+
+    "<p class='hint' style='margin-top:14px'>Рост клиентов и выручка — по реальным датам. Витрина, цена и маржа копятся снимками: чем дольше работает панель, тем длиннее графики.</p>";
+}
+async function loadTrends(range){
+  if(range!=null) trendsRange = range;
+  const root=document.getElementById("trends-root");
+  root.innerHTML="<p class='hint'>Загрузка…</p>";
+  try{
+    const r=await fetch("/api/admin/trends?range="+trendsRange,{headers:{"X-Admin-Token":token}});
+    if(!r.ok){ root.innerHTML="<p class='err'>Ошибка "+r.status+"</p>"; return; }
+    renderTrends(await r.json());
+    document.getElementById("updated").textContent="обновлено "+new Date().toLocaleTimeString("ru-RU");
+  }catch(e){ root.innerHTML="<p class='err'>Ошибка загрузки</p>"; }
 }
 function planBadge(c){
   if(!c.plan || c.plan==="free") return "<span class='badge b-other'>Демо</span>";

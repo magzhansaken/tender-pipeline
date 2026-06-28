@@ -177,6 +177,16 @@ async def _init_auth(pool) -> None:
                 status     TEXT NOT NULL DEFAULT 'paid',  -- paid | pending | failed
                 created_at TIMESTAMPTZ DEFAULT now()
             );
+            CREATE TABLE IF NOT EXISTS metrics_daily (
+                day          DATE PRIMARY KEY,
+                users_total  INTEGER DEFAULT 0,
+                paid         INTEGER DEFAULT 0,
+                live         INTEGER DEFAULT 0,
+                found        INTEGER DEFAULT 0,
+                published    INTEGER DEFAULT 0,
+                priced       INTEGER DEFAULT 0,
+                avg_margin   NUMERIC
+            );
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
         if OWNER_EMAIL and ADMIN_PASSWORD:
@@ -986,6 +996,88 @@ async def admin_business(_: None = Depends(check_admin)):
              "at": f["created_at"].isoformat() if f["created_at"] else None}
             for f in feed
         ],
+    }
+
+
+@app.get("/api/admin/trends")
+async def admin_trends(range: int = Query(90, ge=0, le=1825), _: None = Depends(check_admin)):
+    """Исторические тренды. Регистрации и выручка — из реальных таймстемпов.
+    Метрики витрины (наполнение, цена, маржа) копятся ежедневными снимками,
+    которые записываются при каждом открытии вкладки (не чаще раза в день)."""
+    pool = app.state.pool
+    days = range
+    async with pool.acquire() as con:
+        # ── снимок СЕГОДНЯ (накопление истории витрины) ──
+        live      = await con.fetchval("SELECT count(*) FROM tenders WHERE is_closed=false") or 0
+        found     = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed=false "
+            "AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL')") or 0
+        priced    = await con.fetchval(
+            "SELECT count(*) FROM tenders WHERE is_closed=false "
+            "AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
+            "AND (match_result->>'price') IS NOT NULL") or 0
+        published = await con.fetchval("SELECT count(*) FROM lots") or 0
+        avg_marg  = await con.fetchval("SELECT round(avg(margin_pct)::numeric,1) FROM lots WHERE margin_pct IS NOT NULL")
+        utotal    = await con.fetchval("SELECT count(*) FROM users WHERE role='client'") or 0
+        paid      = await con.fetchval(
+            "SELECT count(*) FROM users WHERE role='client' AND plan IS DISTINCT FROM 'free' "
+            "AND is_trial=false AND (plan_expires_at IS NULL OR plan_expires_at>now())") or 0
+        await con.execute(
+            "INSERT INTO metrics_daily (day, users_total, paid, live, found, published, priced, avg_margin) "
+            "VALUES (current_date,$1,$2,$3,$4,$5,$6,$7) "
+            "ON CONFLICT (day) DO UPDATE SET users_total=EXCLUDED.users_total, paid=EXCLUDED.paid, "
+            "live=EXCLUDED.live, found=EXCLUDED.found, published=EXCLUDED.published, "
+            "priced=EXCLUDED.priced, avg_margin=EXCLUDED.avg_margin",
+            utotal, paid, live, found, published, priced, avg_marg)
+
+        since = "now() - ($1||' days')::interval" if days > 0 else "'epoch'::timestamptz"
+        bparam = [days] if days > 0 else []
+
+        signups = await con.fetch(
+            f"SELECT to_char(date_trunc('day',created_at),'YYYY-MM-DD') d, count(*) n "
+            f"FROM users WHERE role='client' AND created_at >= {since} GROUP BY 1 ORDER BY 1", *bparam)
+        base_users = await con.fetchval(
+            f"SELECT count(*) FROM users WHERE role='client' AND created_at < {since}", *bparam) or 0
+
+        revenue = await con.fetch(
+            f"SELECT to_char(date_trunc('day',created_at),'YYYY-MM-DD') d, sum(amount) a "
+            f"FROM payments WHERE status='paid' AND created_at >= {since} GROUP BY 1 ORDER BY 1", *bparam)
+        base_rev = await con.fetchval(
+            f"SELECT COALESCE(sum(amount),0) FROM payments WHERE status='paid' AND created_at < {since}", *bparam) or 0
+
+        throughput = await con.fetch(
+            f"SELECT to_char(date_trunc('day',updated_at),'YYYY-MM-DD') d, count(*) n "
+            f"FROM lots WHERE updated_at >= {since} GROUP BY 1 ORDER BY 1", *bparam)
+
+        snaps = await con.fetch(
+            f"SELECT to_char(day,'YYYY-MM-DD') d, users_total, paid, live, found, published, priced, avg_margin "
+            f"FROM metrics_daily WHERE day >= ({since})::date ORDER BY day", *bparam)
+
+    cum = base_users
+    sign_series = []
+    for r in signups:
+        cum += r["n"]; sign_series.append({"d": r["d"], "new": r["n"], "cum": cum})
+    cumr = base_rev
+    rev_series = []
+    for r in revenue:
+        cumr += (r["a"] or 0); rev_series.append({"d": r["d"], "amount": r["a"] or 0, "cum": cumr})
+
+    return {
+        "range_days": days,
+        "today": {
+            "users_total": utotal, "paid": paid, "live": live, "found": found,
+            "published": published, "priced": priced,
+            "avg_margin": float(avg_marg) if avg_marg is not None else None,
+            "revenue_total": base_rev + sum((r["a"] or 0) for r in revenue),
+        },
+        "signups": sign_series,
+        "revenue": rev_series,
+        "throughput": [{"d": r["d"], "n": r["n"]} for r in throughput],
+        "snapshots": [{
+            "d": r["d"], "published": r["published"], "priced": r["priced"],
+            "found": r["found"], "live": r["live"], "paid": r["paid"],
+            "avg_margin": float(r["avg_margin"]) if r["avg_margin"] is not None else None,
+        } for r in snaps],
     }
 
 
