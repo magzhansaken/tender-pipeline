@@ -59,6 +59,16 @@
   .srow .sfill{height:100%}
   .srow .sc{width:64px;text-align:right;font-size:13px;font-weight:620}
 
+  /* покрытие по площадкам */
+  .crow{display:flex;align-items:center;gap:10px;margin:10px 0}
+  .crow .cn{width:130px;font-size:13px;flex:0 0 auto}
+  .crow .cwrap{flex:1;position:relative;height:18px;background:var(--panel2);border-radius:6px;overflow:hidden}
+  .crow .cbar{position:absolute;left:0;top:0;height:100%;background:#3a4452;border-radius:6px}
+  .crow .cfill{position:absolute;left:0;top:0;height:100%;background:var(--green);border-radius:6px}
+  .crow .cc{width:200px;text-align:right;font-size:12px;color:var(--muted);flex:0 0 auto}
+  .crow .cc b{color:var(--green);font-weight:650}
+  @media(max-width:640px){.crow .cn{width:88px}.crow .cc{width:130px;font-size:11px}}
+
   /* вход */
   .gate{max-width:380px;margin:80px auto;background:var(--panel);border:1px solid var(--line);
     border-radius:14px;padding:28px}
@@ -117,6 +127,13 @@
       <h2>Результаты поиска (живые тендеры)</h2>
       <p class="hint">На что разложились тендеры после поиска на площадках.</p>
       <div id="statuses"></div>
+    </div>
+
+    <!-- покрытие по площадкам -->
+    <div class="section">
+      <h2>Покрытие по площадкам</h2>
+      <p class="hint">У скольких найденных тендеров источник — эта площадка. Зелёным — у скольких из них есть цена.</p>
+      <div id="coverage"></div>
     </div>
   </div>
 
@@ -186,6 +203,11 @@ const STATUS_LABELS = {
   "NOT_FOUND":"Не найдено",
   "(не обработано)":"Ещё не обработано",
 };
+const SITE_NAMES = {
+  "kaspi.kz":"Kaspi", "satu.kz":"Satu", "chipdip.kz":"Chipdip", "otvertka.kz":"Otvertka",
+  "wildberries.ru":"Wildberries", "alibaba.com":"Alibaba", "ozon.ru":"Ozon",
+  "market.yandex.ru":"Яндекс.Маркет",
+};
 
 function render(d){
   const f = d.funnel, fr = d.freshness;
@@ -247,6 +269,21 @@ function render(d){
       <div class="sn">${lbl}</div>
       <div class="strack"><div class="sfill" style="width:${Math.max(2,pct(v,stMax))}%;background:${col}"></div></div>
       <div class="sc">${fmt(v)}</div>
+    </div>`;
+  }).join("");
+
+  // покрытие по площадкам
+  const cov = d.coverage || [];
+  const covMax = Math.max(1, ...cov.map(c=>c.total));
+  document.getElementById("coverage").innerHTML = cov.map(c=>{
+    const nm = SITE_NAMES[c.site] || c.site;
+    const volW = Math.max(2, pct(c.total, covMax));
+    const priceW = pct(c.with_price, covMax);
+    const ppct = pct(c.with_price, c.total);
+    return `<div class="crow">
+      <div class="cn">${nm}</div>
+      <div class="cwrap"><div class="cbar" style="width:${volW}%"></div><div class="cfill" style="width:${priceW}%"></div></div>
+      <div class="cc">${fmt(c.total)} найдено · <b>${fmt(c.with_price)} с ценой</b> (${ppct}%)</div>
     </div>`;
   }).join("");
 

@@ -189,6 +189,14 @@ async def admin_health(_: None = Depends(check_admin)):
             "SELECT count(*) FROM tenders WHERE collected_at > now() - interval '24 hours'"
         )
         last_published = await con.fetchval("SELECT max(updated_at) FROM lots")
+        coverage = await con.fetch(
+            "SELECT COALESCE(match_result->>'source_site','(не указан)') AS site, "
+            "count(*) AS total, "
+            "count(*) FILTER (WHERE (match_result->>'price') IS NOT NULL) AS with_price "
+            "FROM tenders WHERE is_closed = false "
+            "AND match_status IN ('FOUND_EXACT','FOUND_PARTIAL') "
+            "GROUP BY 1 ORDER BY total DESC"
+        )
     return {
         "funnel": {
             "total": total or 0, "live": live or 0, "normalized": normalized or 0,
@@ -196,6 +204,10 @@ async def admin_health(_: None = Depends(check_admin)):
             "priced": priced or 0, "published": published or 0,
         },
         "by_status": {r["s"]: r["c"] for r in by_status},
+        "coverage": [
+            {"site": r["site"], "total": r["total"], "with_price": r["with_price"]}
+            for r in coverage
+        ],
         "freshness": {
             "last_collected": last_collected.isoformat() if last_collected else None,
             "new_24h": new_24h or 0,
