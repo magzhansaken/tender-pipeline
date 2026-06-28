@@ -2,28 +2,28 @@
 # -*- coding: utf-8 -*-
 """Фоновый Alibaba-проход (этап «оптовый ориентир $») — СИНХРОННЫЙ (psycopg2).
 
-ВАЖНО (проверено замерами): Alibaba отдаёт товары «через раз» — окно открывается
-не всегда, и его надо УПОРНО ловить (иногда нужно 6 попыток). «0 товаров» с
-малым числом попыток — это НЕ «товара нет» и НЕ «квота кончилась», а просто
-«в этот момент окно было закрыто». Поэтому:
-  - на каждый тендер до RETRIES попыток (по умолч. 8) с паузой DELAY±разброс;
-  - НЕТ авто-стопа по «серии отказов» (он давал ложную остановку);
-  - кого не поймали в первом круге — добиваем ВТОРЫМ кругом в конце.
+НАСТРОЙКА ПО ИТОГАМ ЗАМЕРОВ: Alibaba отдаёт товары «через окно», которое
+открывается/закрывается само. Когда окно полуоткрыто — товар дотягивается
+УПОРНЫМИ попытками с паузой 15-20с между ними (в тестах так ловилось до 6/6,
+а led bulb — на 5-й попытке). Поэтому:
+  - до RETRIES попыток на тендер (по умолч. 8);
+  - пауза МЕЖДУ ПОПЫТКАМИ 15-20с наугад (ключевое — короткие 3-5с ловили хуже);
+  - без стоп-детекторов и второго круга (окно глобальное, добивать смысла нет —
+    не пойманного добьёт следующий запуск по cron, когда окно откроется).
 
-Идёт по ВСЕМ живым подобранным тендерам без цены (жёсткого лимита нет, только
-предохранитель HARD_CAP). Для каждого: английский ключ через Олламу -> поиск
-Showroom -> диапазон-ориентир (схема Б: медиана + коридор USD + MOQ) в ali_*.
+Идёт по живым подобранным тендерам без цены (предохранитель HARD_CAP на запуск).
+Для каждого: английский ключ через Олламу -> упорный поиск Showroom ->
+диапазон-ориентир (схема Б: медиана + коридор USD + MOQ) в ali_*.
 
-В match_result.price ориентир кладётся только если цены ещё нет (не затираем
-точную тенге-цену Kaspi/Satu). ali_tries — после MAX_TRIES заходов на тендер в
-РАЗНЫХ запусках больше не берём (чтобы не копить вечно ненаходимые).
+В match_result.price кладём ориентир только если цены ещё нет (не затираем
+точную тенге Kaspi/Satu). ali_tries — после MAX_TRIES заходов тендер пропускаем.
 
-ENV: DATABASE_URL, OLLAMA_API_KEY, OLLAMA_MODEL (gpt-oss:20b),
-     ALI_RETRIES (попыток на тендер, 8), ALI_DELAY (пауза внутри попыток, 5),
-     ALI_GAP_MIN/ALI_GAP_MAX (пауза между тендерами, 15/20),
-     ALI_SECOND_ROUND (1=добивать непойманных вторым кругом, 1),
-     ALI_MAX_TRIES (заходов на тендер за всю историю, 3),
-     ALI_HARD_CAP (предохранитель на один запуск, 300)
+ENV: DATABASE_URL, OLLAMA_API_KEY, OLLAMA_MODEL,
+     ALI_RETRIES (попыток на тендер, 8),
+     ALI_TRY_MIN/ALI_TRY_MAX (пауза между попытками, 15/20),
+     ALI_GAP_MIN/ALI_GAP_MAX (пауза между тендерами, 8/12),
+     ALI_MAX_TRIES (заходов на тендер за историю, 5),
+     ALI_HARD_CAP (тендеров за один запуск, 40)
 """
 import os
 import json
@@ -40,12 +40,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/ten
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
 RETRIES = int(os.getenv("ALI_RETRIES", "8"))
-DELAY = float(os.getenv("ALI_DELAY", "5"))
-GAP_MIN = float(os.getenv("ALI_GAP_MIN", "15"))
-GAP_MAX = float(os.getenv("ALI_GAP_MAX", "20"))
-SECOND_ROUND = os.getenv("ALI_SECOND_ROUND", "1") == "1"
-MAX_TRIES = int(os.getenv("ALI_MAX_TRIES", "3"))
-HARD_CAP = int(os.getenv("ALI_HARD_CAP", "300"))
+TRY_MIN = float(os.getenv("ALI_TRY_MIN", "15"))
+TRY_MAX = float(os.getenv("ALI_TRY_MAX", "20"))
+GAP_MIN = float(os.getenv("ALI_GAP_MIN", "8"))
+GAP_MAX = float(os.getenv("ALI_GAP_MAX", "12"))
+MAX_TRIES = int(os.getenv("ALI_MAX_TRIES", "5"))
+HARD_CAP = int(os.getenv("ALI_HARD_CAP", "40"))
 
 SELECT_SQL = """
 SELECT id, name, structured_spec, match_result
@@ -141,13 +141,14 @@ def merge_result(mr, orient):
 
 
 def search_persistent(fetcher, kw):
-    """Упорный поиск: до RETRIES попыток с паузой DELAY +-разброс (ловим окно)."""
-    for _ in range(RETRIES):
-        rows, _att = fetcher.search(kw, retries=1, delay=0)
+    """Упорная ловля окна: до RETRIES попыток, пауза 15-20с МЕЖДУ ними."""
+    for att in range(1, RETRIES + 1):
+        rows, _ = fetcher.search(kw, retries=1, delay=0)
         if rows:
-            return rows
-        time.sleep(DELAY + random.uniform(-1.5, 1.5))
-    return []
+            return rows, att
+        if att < RETRIES:
+            time.sleep(random.uniform(TRY_MIN, TRY_MAX))
+    return [], RETRIES
 
 
 def main():
@@ -161,8 +162,8 @@ def main():
     cur = conn.cursor()
     cur.execute(SELECT_SQL, (MAX_TRIES, HARD_CAP))
     rows = cur.fetchall()
-    print("Alibaba-проход: в очереди %d | до %d попыток/тендер | пауза %g-%gс наугад%s"
-          % (len(rows), RETRIES, GAP_MIN, GAP_MAX, " | + второй круг" if SECOND_ROUND else ""))
+    print("Alibaba-проход: в очереди %d | до %d попыток/тендер, пауза между попытками %g-%gс"
+          % (len(rows), RETRIES, TRY_MIN, TRY_MAX))
     if not rows:
         cur.close()
         conn.close()
@@ -171,9 +172,7 @@ def main():
     fetcher = AlibabaPriceFetcher()
     got = 0
     processed = 0
-    missed = []  # (rid, kw, mr_raw) — не пойманные в первом круге
     try:
-        # ===== ПЕРВЫЙ КРУГ =====
         for i, (rid, name, spec_raw, mr_raw) in enumerate(rows, 1):
             spec = as_dict(spec_raw)
             ru = ru_source(name, spec)
@@ -182,50 +181,26 @@ def main():
                 cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, None), ensure_ascii=False), rid))
                 print("  [%d/%d] перевод не удался | id=%s" % (i, len(rows), rid))
                 continue
-            products = search_persistent(fetcher, kw)
+            products, att = search_persistent(fetcher, kw)
             orient = build_orient(products) if products else None
+            cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, orient), ensure_ascii=False), rid))
+            processed += 1
             if orient:
-                cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, orient), ensure_ascii=False), rid))
-                processed += 1
                 got += 1
-                print("  [%d/%d] %-36s | med $%.2f ($%.2f-$%.2f, от %s) | id=%s"
-                      % (i, len(rows), kw[:36], orient["price"], orient["ali_usd_low"],
-                         orient["ali_usd_high"], orient["ali_moq"], rid))
+                print("  [%d/%d] %-34s | med $%.2f ($%.2f-$%.2f, от %s) | поп.%d | id=%s"
+                      % (i, len(rows), kw[:34], orient["price"], orient["ali_usd_low"],
+                         orient["ali_usd_high"], orient["ali_moq"], att, rid))
             else:
-                missed.append((rid, kw, mr_raw))
-                print("  [%d/%d] %-36s | \u2014 первый круг мимо | id=%s" % (i, len(rows), kw[:36], rid))
+                print("  [%d/%d] %-34s | \u2014 окно закрыто (%d поп.) | id=%s"
+                      % (i, len(rows), kw[:34], att, rid))
             if i < len(rows):
                 time.sleep(random.uniform(GAP_MIN, GAP_MAX))
-
-        # ===== ВТОРОЙ КРУГ (добиваем непойманных) =====
-        if SECOND_ROUND and missed:
-            print("\n--- Второй круг: добиваем %d непойманных ---" % len(missed))
-            still = []
-            for j, (rid, kw, mr_raw) in enumerate(missed, 1):
-                products = search_persistent(fetcher, kw)
-                orient = build_orient(products) if products else None
-                cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, orient), ensure_ascii=False), rid))
-                processed += 1
-                if orient:
-                    got += 1
-                    print("  (2) [%d/%d] %-34s | med $%.2f | id=%s"
-                          % (j, len(missed), kw[:34], orient["price"], rid))
-                else:
-                    still.append(rid)
-                    print("  (2) [%d/%d] %-34s | \u2014 не нашли | id=%s" % (j, len(missed), kw[:34], rid))
-                if j < len(missed):
-                    time.sleep(random.uniform(GAP_MIN, GAP_MAX))
-            print("После второго круга осталось без цены: %d" % len(still))
-        else:
-            # второй круг выключен — всё равно отметим попытку у непойманных
-            for rid, kw, mr_raw in missed:
-                cur.execute(UPDATE_SQL, (json.dumps(merge_result(mr_raw, None), ensure_ascii=False), rid))
-                processed += 1
     finally:
         cur.close()
         conn.close()
 
-    print("\nИтог: обработано %d, ориентир записан у %d." % (processed, got))
+    pctg = got * 100 // processed if processed else 0
+    print("\nИтог: обработано %d, ориентир записан у %d (%d%%)." % (processed, got, pctg))
 
 
 if __name__ == "__main__":
