@@ -1030,7 +1030,7 @@ async def admin_trends(range: int = Query(90, ge=0, le=1825), _: None = Depends(
             "priced=EXCLUDED.priced, avg_margin=EXCLUDED.avg_margin",
             utotal, paid, live, found, published, priced, avg_marg)
 
-        since = "now() - ($1||' days')::interval" if days > 0 else "'epoch'::timestamptz"
+        since = "now() - ($1::int * INTERVAL '1 day')" if days > 0 else "'epoch'::timestamptz"
         bparam = [days] if days > 0 else []
 
         signups = await con.fetch(
