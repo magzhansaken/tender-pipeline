@@ -7,219 +7,313 @@
 <title>TenderFinder — Панель управления</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2a3340;
-    --ink:#e6edf3; --muted:#9aa7b4; --faint:#6b7681;
-    --blue:#3b82f6; --indigo:#6366f1; --violet:#8b5cf6;
-    --green:#22c55e; --teal:#14b8a6; --amber:#f59e0b; --red:#ef4444;
+    --bg:#0b0e13; --sidebar:#0f141b; --surface:#151c25; --surface-2:#1b232e;
+    --line:#242d3a; --line-2:#2f3a49;
+    --ink:#e7edf4; --muted:#97a3b2; --faint:#646f7d;
+    --accent:#2dd4bf; --accent-soft:#10342e;
+    --blue:#5b9bf0; --indigo:#7c8cf8; --violet:#a78bfa;
+    --green:#34d399; --teal:#2dd4bf; --amber:#fbbf24; --red:#f87171;
+    --radius:14px;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  a{color:var(--teal)}
-  .wrap{max-width:980px;margin:0 auto;padding:24px 18px 60px}
-  header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px}
-  h1{font-size:20px;margin:0;font-weight:650}
-  .sub{color:var(--muted);font-size:13px}
-  .nav{display:flex;gap:8px;margin:10px 0 22px;flex-wrap:wrap}
-  .nav a{padding:6px 12px;border:1px solid var(--line);border-radius:8px;text-decoration:none;
-    color:var(--muted);font-size:13px}
-  .nav a.on{background:var(--panel2);color:var(--ink);border-color:#33415a}
-  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
-    padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px}
-  .btn:hover{border-color:#3a4656}
-  .updated{color:var(--faint);font-size:12px}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.55 var(--sans)}
+  a{color:var(--accent)}
 
-  /* карточки свежести */
-  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-  .card .lbl{color:var(--muted);font-size:12px;margin-bottom:6px}
-  .card .val{font-size:22px;font-weight:680}
-  .card .note{color:var(--faint);font-size:12px;margin-top:2px}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  /* ── Раскладка ── */
+  .shell{display:flex;min-height:100vh}
+  .sidebar{width:240px;flex:0 0 240px;background:var(--sidebar);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;height:100vh}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .content{padding:24px 28px 64px;max-width:1180px;width:100%}
 
-  /* секции */
-  .section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
-  .section h2{font-size:15px;margin:0 0 4px;font-weight:620}
-  .section .hint{color:var(--faint);font-size:12px;margin:0 0 16px}
+  /* ── Сайдбар ── */
+  .brand{display:flex;align-items:center;gap:11px;padding:4px 10px 18px;font-weight:700;font-size:16px;letter-spacing:-.01em}
+  .brand .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(140deg,#2dd4bf,#0f766e);
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .brand .mark svg{width:17px;height:17px}
+  .nav{display:flex;flex-direction:column;gap:3px;flex:1}
+  .navitem{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--muted);
+    text-decoration:none;font-size:14px;font-weight:500;cursor:pointer;transition:.13s}
+  .navitem:hover{background:var(--surface);color:var(--ink)}
+  .navitem.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .navitem svg{width:18px;height:18px;flex:0 0 auto;opacity:.95}
+  .sidebar-foot{border-top:1px solid var(--line);padding-top:13px;margin-top:10px;display:flex;flex-direction:column;gap:5px}
+  .sidebar-foot .who{font-size:12.5px;color:var(--faint);padding:2px 6px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sidebar-foot button,.sidebar-foot a{font:inherit;font-size:13px;text-align:left;background:none;border:none;
+    color:var(--muted);cursor:pointer;padding:7px 6px;text-decoration:none;border-radius:7px}
+  .sidebar-foot button:hover,.sidebar-foot a:hover{color:var(--accent);background:var(--surface)}
 
-  /* воронка */
+  /* ── Топбар ── */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:17px 28px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;
+    background:rgba(11,14,19,.82);backdrop-filter:blur(8px)}
+  .topbar h1{font-size:18px;margin:0;font-weight:680;letter-spacing:-.01em}
+  .topbar .crumb{font-size:12.5px;color:var(--faint);margin-top:2px}
+  .topbar-actions{display:flex;align-items:center;gap:12px}
+  .topbar-actions #updated{font-size:12px;color:var(--faint)}
+
+  .btn{background:var(--surface);border:1px solid var(--line-2);color:var(--ink);padding:8px 14px;
+    border-radius:9px;cursor:pointer;font:inherit;font-size:13px;font-weight:500}
+  .btn:hover{border-color:var(--accent)}
+  .btn.ghost{background:transparent}
+  .btn[disabled]{opacity:.45;cursor:default}
+
+  /* ── Карточки ── */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .card .lbl{color:var(--muted);font-size:12.5px;margin-bottom:7px}
+  .card .val{font-size:24px;font-weight:700;letter-spacing:-.01em}
+  .card .note{color:var(--faint);font-size:12px;margin-top:3px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+  /* ── Секции ── */
+  .section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+  .section h2{font-size:15px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
+  .section .hint{color:var(--faint);font-size:12.5px;margin:0 0 18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .hint{color:var(--faint);font-size:12.5px}
+  .err{color:var(--red);font-size:13px}
+
+  /* ── Воронка ── */
   .stage{margin:0 0 14px}
   .stage .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
-  .stage .name{font-size:14px}
-  .stage .cnt{font-weight:680;font-size:15px}
-  .track{height:24px;background:var(--panel2);border-radius:7px;overflow:hidden}
+  .stage .name{font-size:13.5px}
+  .stage .cnt{font-weight:700;font-size:15px}
+  .track{height:22px;background:var(--surface-2);border-radius:7px;overflow:hidden}
   .fill{height:100%;border-radius:7px;transition:width .5s ease;min-width:2px}
   .stage .meta{color:var(--faint);font-size:12px;margin-top:4px}
   .stage .meta b{color:var(--muted);font-weight:600}
 
-  /* разбивка по статусам */
+  /* ── Статусы ── */
   .srow{display:flex;align-items:center;gap:10px;margin:9px 0}
-  .srow .sn{width:170px;font-size:13px;color:var(--muted);flex:0 0 auto}
-  .srow .strack{flex:1;height:16px;background:var(--panel2);border-radius:6px;overflow:hidden}
+  .srow .sn{width:150px;font-size:13px;color:var(--muted);flex:0 0 auto}
+  .srow .strack{flex:1;height:15px;background:var(--surface-2);border-radius:6px;overflow:hidden}
   .srow .sfill{height:100%}
-  .srow .sc{width:64px;text-align:right;font-size:13px;font-weight:620}
+  .srow .sc{width:60px;text-align:right;font-size:13px;font-weight:650}
 
-  /* покрытие по площадкам */
+  /* ── Покрытие ── */
   .crow{display:flex;align-items:center;gap:10px;margin:10px 0}
-  .crow .cn{width:130px;font-size:13px;flex:0 0 auto}
-  .crow .cwrap{flex:1;position:relative;height:18px;background:var(--panel2);border-radius:6px;overflow:hidden}
-  .crow .cbar{position:absolute;left:0;top:0;height:100%;background:#3a4452;border-radius:6px}
+  .crow .cn{width:120px;font-size:13px;flex:0 0 auto}
+  .crow .cwrap{flex:1;position:relative;height:17px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+  .crow .cbar{position:absolute;left:0;top:0;height:100%;background:#33415a;border-radius:6px}
   .crow .cfill{position:absolute;left:0;top:0;height:100%;background:var(--green);border-radius:6px}
-  .crow .cc{width:200px;text-align:right;font-size:12px;color:var(--muted);flex:0 0 auto}
+  .crow .cc{width:215px;text-align:right;font-size:12px;color:var(--muted);flex:0 0 auto}
   .crow .cc b{color:var(--green);font-weight:650}
-  @media(max-width:640px){.crow .cn{width:88px}.crow .cc{width:130px;font-size:11px}}
+  @media(max-width:640px){.crow .cn{width:80px}.crow .cc{width:120px;font-size:11px}}
 
-  /* воркеры */
+  /* ── Воркеры ── */
   .wrow{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
   .wrow:last-child{border-bottom:none}
   .wrow .wdot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:0 0 auto}
   .wrow .wmid{flex:1;min-width:0}
-  .wrow .wname{font-size:14px}
+  .wrow .wname{font-size:13.5px}
   .wrow .wsched{color:var(--faint);font-size:12px}
-  .wrow .wlog{color:var(--muted);font-size:11.5px;margin-top:4px;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  .wrow .wlog{color:var(--muted);font-size:11.5px;margin-top:4px;font-family:var(--mono);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .wrow .wago{font-size:12.5px;text-align:right;flex:0 0 auto;width:96px}
 
-  /* вход */
-  .gate{max-width:380px;margin:80px auto;background:var(--panel);border:1px solid var(--line);
-    border-radius:14px;padding:28px}
-  .gate h2{margin:0 0 6px;font-size:18px}
-  .gate p{color:var(--muted);font-size:13px;margin:0 0 18px}
-  .gate input{width:100%;padding:11px 13px;background:var(--bg);border:1px solid var(--line);
-    border-radius:9px;color:var(--ink);font-size:15px;margin-bottom:12px}
-  .gate .btn{width:100%;padding:11px;background:var(--teal);border:none;color:#06231f;font-weight:650}
-  .err{color:var(--red);font-size:13px;margin-top:10px;min-height:18px}
-  .hidden{display:none !important}
-  @media(max-width:640px){.cards{grid-template-columns:1fr}.srow .sn{width:120px}}
-  /* ── Лоты ── */
+  /* ── Фильтры + таблицы ── */
   .filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-  .filters select,.filters input{background:var(--bg);border:1px solid var(--line);color:var(--ink);
-    border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit}
+  .filters select,.filters input{background:var(--bg);border:1px solid var(--line-2);color:var(--ink);
+    border-radius:9px;padding:9px 11px;font:inherit;font-size:13px}
   .filters input[type=text],.filters input:not([type]){min-width:220px}
   .filters .chk{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:12px;cursor:pointer}
-  .btn.ghost{background:transparent}
   table.lots{width:100%;border-collapse:collapse;font-size:13px}
-  table.lots th{text-align:left;color:var(--faint);font-weight:600;padding:8px 10px;
-    border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
-  table.lots td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  table.lots tbody tr{cursor:pointer}
-  table.lots tbody tr:hover{background:var(--panel2)}
+  table.lots th{text-align:left;color:var(--faint);font-weight:600;padding:9px 10px;
+    border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  table.lots td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
   table.lots td.name{max-width:280px}
-  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
-  .b-exact{background:#163a26;color:#4ade80}
+  #lots-table table.lots tbody tr{cursor:pointer}
+  #lots-table table.lots tbody tr:hover{background:var(--surface-2)}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .b-exact{background:#0f3325;color:#4ade80}
   .b-partial{background:#3a3416;color:#fbbf24}
   .b-notfound{background:#3a1d1d;color:#f87171}
-  .b-other{background:#2a3340;color:#9aa7b8}
+  .b-other{background:#222c3a;color:#9aa7b8}
+  .b-owner{background:#1c2c44;color:#79b8ff}
   .lots-meta{color:var(--faint);font-size:12px;margin-bottom:10px}
   .pager{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:16px}
-  .pager .btn[disabled]{opacity:.4;cursor:default}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:flex-start;
-    justify-content:center;padding:40px 20px;z-index:100;overflow:auto}
-  .modal-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;
-    max-width:760px;width:100%;position:relative}
-  .modal-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--faint);
+  .pager .btn[disabled]{opacity:.4}
+  .btn-sm{font:inherit;font-size:12px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .btn-danger{background:#3a1d1d;color:#f87171;border-color:#5a2a28}
+  .btn-danger:hover{background:#4a2422}
+  .btn-ok{background:#0f3325;color:#4ade80;border-color:#1d5038}
+  .btn-ok:hover{background:#154230}
+  .btn-sm[disabled]{opacity:.5;cursor:default}
+
+  /* ── Модалка ── */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.66);display:flex;align-items:flex-start;
+    justify-content:center;padding:42px 20px;z-index:100;overflow:auto}
+  .modal-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px;
+    max-width:780px;width:100%;position:relative}
+  .modal-x{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--faint);
     font-size:20px;cursor:pointer;line-height:1}
-  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;font-size:13px;margin:10px 0}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:7px 14px;font-size:13px;margin:10px 0}
   .kv .k{color:var(--faint)}
-  .spec-box{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;
+  .spec-box{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:13px;
     font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto;color:var(--ink);line-height:1.5}
-  .dlbl{font-size:11px;text-transform:uppercase;color:var(--faint);margin:18px 0 4px;
-    font-weight:600;letter-spacing:.03em}
+  .dlbl{font-size:11px;text-transform:uppercase;color:var(--faint);margin:18px 0 4px;font-weight:600;letter-spacing:.04em}
+
+  .hidden{display:none !important}
+
+  /* ── Мобильный ── */
+  @media(max-width:780px){
+    .shell{flex-direction:column}
+    .sidebar{width:auto;flex:none;height:auto;position:static;flex-direction:row;align-items:center;
+      padding:10px 14px;gap:10px;overflow-x:auto}
+    .brand{padding:0 6px 0 0;font-size:15px}
+    .brand .name{display:none}
+    .nav{flex-direction:row;flex:1;gap:4px}
+    .navitem{padding:8px 11px;white-space:nowrap}
+    .sidebar-foot{border-top:none;padding-top:0;margin-top:0;flex-direction:row;align-items:center;gap:2px}
+    .sidebar-foot .who{display:none}
+    .content{padding:18px 16px 50px}
+    .topbar{padding:14px 16px}
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <!-- ПАНЕЛЬ -->
-  <div id="app" class="hidden">
-    <header>
+<div class="shell hidden" id="app">
+
+  <!-- САЙДБАР -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#06231f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <span class="name">TenderFinder</span>
+    </div>
+    <nav class="nav">
+      <a href="#" class="navitem on" id="nav-overview" onclick="switchView('overview');return false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+        <span>Обзор</span>
+      </a>
+      <a href="#" class="navitem" id="nav-lots" onclick="switchView('lots');return false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span>Лоты</span>
+      </a>
+      <a href="#" class="navitem" id="nav-clients" onclick="switchView('clients');return false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Клиенты</span>
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="who" id="whoEmail"></div>
+      <a href="/">← На витрину</a>
+      <button onclick="logout()">Выйти</button>
+    </div>
+  </aside>
+
+  <!-- ОСНОВНОЕ -->
+  <main class="main">
+    <header class="topbar">
       <div>
-        <h1>TenderFinder — Панель управления</h1>
-        <div class="sub">Здоровье пайплайна сбора и публикации тендеров</div>
+        <h1 id="pageTitle">Обзор</h1>
+        <div class="crumb" id="pageCrumb">Здоровье пайплайна сбора и публикации</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <span id="updated" class="updated"></span>
-        <button class="btn" onclick="load()">↻ Обновить</button>
-        <button class="btn" onclick="logout()">Выйти</button>
+      <div class="topbar-actions">
+        <span id="updated"></span>
+        <button class="btn" onclick="refreshCurrent()">↻ Обновить</button>
       </div>
     </header>
 
-    <div class="nav">
-      <a href="#" class="on" id="tab-health" onclick="switchView('health');return false">Здоровье пайплайна</a>
-      <a href="#" id="tab-lots" onclick="switchView('lots');return false">Лоты</a>
-      <a href="/" >← На витрину</a>
-    </div>
+    <div class="content">
 
-    <div id="view-health">
-    <!-- свежесть -->
-    <div class="cards" id="cards"></div>
-
-    <!-- воронка -->
-    <div class="section">
-      <h2>Воронка пайплайна</h2>
-      <p class="hint">Сколько живых тендеров дошло до каждого этапа. В скобках — доля от всех живых и от предыдущего этапа.</p>
-      <div id="funnel"></div>
-    </div>
-
-    <!-- статусы -->
-    <div class="section">
-      <h2>Результаты поиска (живые тендеры)</h2>
-      <p class="hint">На что разложились тендеры после поиска на площадках.</p>
-      <div id="statuses"></div>
-    </div>
-
-    <!-- покрытие по площадкам -->
-    <div class="section">
-      <h2>Покрытие по площадкам</h2>
-      <p class="hint">У скольких найденных тендеров источник — эта площадка. Зелёным — у скольких из них есть цена.</p>
-      <div id="coverage"></div>
-    </div>
-
-    <!-- воркеры -->
-    <div class="section">
-      <h2>Воркеры (фоновые задачи)</h2>
-      <p class="hint">Когда каждая cron-задача последний раз писала в лог и что именно. Зелёный — в норме, жёлтый — запаздывает, красный — давно молчит.</p>
-      <div id="workers"></div>
-    </div>
-    </div><!-- /view-health -->
-
-    <div id="view-lots" class="hidden">
-      <div class="section">
-        <h2>Лоты</h2>
-        <p class="hint">Все тендеры из базы. Сортировка: сначала с ценой и точным совпадением. Клик по строке — детали лота.</p>
-        <div class="filters">
-          <select id="f-status"><option value="">Все статусы</option></select>
-          <select id="f-price">
-            <option value="">Цена: любая</option>
-            <option value="true">С ценой</option>
-            <option value="false">Без цены</option>
-          </select>
-          <select id="f-site"><option value="">Все площадки</option></select>
-          <input type="text" id="f-q" placeholder="Поиск по названию или номеру" onkeydown="if(event.key==='Enter')applyFilters()" />
-          <input type="number" id="f-minsum" placeholder="Сумма от, ₸" />
-          <label class="chk"><input type="checkbox" id="f-closed"/> вкл. закрытые</label>
-          <button class="btn" onclick="applyFilters()">Применить</button>
-          <button class="btn ghost" onclick="resetFilters()">Сброс</button>
+      <!-- ОБЗОР -->
+      <section id="view-overview">
+        <div class="cards" id="cards"></div>
+        <div class="grid2">
+          <div class="section">
+            <h2>Воронка пайплайна</h2>
+            <p class="hint">Сколько живых тендеров дошло до каждого этапа. В скобках — доля от живых и от предыдущего этапа.</p>
+            <div id="funnel"></div>
+          </div>
+          <div class="section">
+            <h2>Результаты поиска</h2>
+            <p class="hint">На что разложились живые тендеры после поиска на площадках.</p>
+            <div id="statuses"></div>
+          </div>
         </div>
-        <div id="lots-meta" class="lots-meta"></div>
-        <div id="lots-table"></div>
-        <div id="lots-pager" class="pager"></div>
-      </div>
-    </div>
-  </div>
+        <div class="section">
+          <h2>Покрытие по площадкам</h2>
+          <p class="hint">У скольких найденных тендеров источник — эта площадка. Зелёным — у скольких из них есть цена.</p>
+          <div id="coverage"></div>
+        </div>
+        <div class="section">
+          <h2>Воркеры (фоновые задачи)</h2>
+          <p class="hint">Когда каждая cron-задача последний раз писала в лог. Зелёный — в норме, жёлтый — запаздывает, красный — давно молчит.</p>
+          <div id="workers"></div>
+        </div>
+      </section>
 
-  <div id="lot-modal" class="modal hidden" onclick="if(event.target===this)closeLot()">
-    <div class="modal-box">
-      <button class="modal-x" onclick="closeLot()">✕</button>
-      <div id="lot-detail"></div>
-    </div>
-  </div>
+      <!-- ЛОТЫ -->
+      <section id="view-lots" class="hidden">
+        <div class="section">
+          <h2>Лоты</h2>
+          <p class="hint">Все тендеры из базы. Сортировка: сначала с ценой и точным совпадением. Клик по строке — детали лота.</p>
+          <div class="filters">
+            <select id="f-status"><option value="">Все статусы</option></select>
+            <select id="f-price">
+              <option value="">Цена: любая</option>
+              <option value="true">С ценой</option>
+              <option value="false">Без цены</option>
+            </select>
+            <select id="f-site"><option value="">Все площадки</option></select>
+            <input type="text" id="f-q" placeholder="Поиск по названию или номеру" onkeydown="if(event.key==='Enter')applyFilters()">
+            <input type="number" id="f-minsum" placeholder="Сумма от, ₸">
+            <label class="chk"><input type="checkbox" id="f-closed"> вкл. закрытые</label>
+            <button class="btn" onclick="applyFilters()">Применить</button>
+            <button class="btn ghost" onclick="resetFilters()">Сброс</button>
+          </div>
+          <div id="lots-meta" class="lots-meta"></div>
+          <div id="lots-table"></div>
+          <div id="lots-pager" class="pager"></div>
+        </div>
+      </section>
 
+      <!-- КЛИЕНТЫ -->
+      <section id="view-clients" class="hidden">
+        <div class="cards" id="client-stats"></div>
+        <div class="section">
+          <h2>Клиенты</h2>
+          <p class="hint">Аккаунты пользователей. Заблокированный клиент теряет доступ и активные сессии.</p>
+          <div class="filters">
+            <select id="c-status">
+              <option value="">Все статусы</option>
+              <option value="active">Активные</option>
+              <option value="blocked">Заблокированные</option>
+            </select>
+            <select id="c-role">
+              <option value="">Все роли</option>
+              <option value="client">Клиенты</option>
+              <option value="owner">Владелец</option>
+            </select>
+            <input type="text" id="c-q" placeholder="Поиск по email" onkeydown="if(event.key==='Enter')applyClientFilters()">
+            <button class="btn" onclick="applyClientFilters()">Применить</button>
+            <button class="btn ghost" onclick="resetClientFilters()">Сброс</button>
+          </div>
+          <div id="clients-meta" class="lots-meta"></div>
+          <div id="clients-table"></div>
+          <div id="clients-pager" class="pager"></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- МОДАЛКА ЛОТА -->
+<div id="lot-modal" class="modal hidden" onclick="if(event.target===this)closeLot()">
+  <div class="modal-box">
+    <button class="modal-x" onclick="closeLot()">✕</button>
+    <div id="lot-detail"></div>
+  </div>
 </div>
 
 <script>
-// Вход — через единую страницу /login. Здесь только токен сессии владельца.
+// ── Вход: токен сессии владельца из /login ──
 let token = localStorage.getItem("tf_token") || "";
 
 function show(id){ document.getElementById(id).classList.remove("hidden"); }
@@ -231,7 +325,6 @@ function goLogin(){
   localStorage.removeItem("tf_email");
   location.href = "/login";
 }
-
 async function logout(){
   try{ await fetch("/api/auth/logout", {method:"POST", headers:{"X-Auth-Token": token}}); }catch(e){}
   goLogin();
@@ -251,7 +344,10 @@ function ago(iso){
   return dd + " дн назад";
 }
 function fmt(n){ return (n==null?0:n).toLocaleString("ru-RU"); }
+function fmtDate(iso){ if(!iso) return "—"; return new Date(iso).toLocaleDateString("ru-RU"); }
 function pct(a,b){ return b>0 ? Math.round(a/b*100) : 0; }
+function escHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escAttr(s){ return escHtml(s).replace(/"/g,"&quot;"); }
 
 function freshDot(iso, okHours){
   if(!iso) return "var(--faint)";
@@ -269,29 +365,21 @@ const STAGES = [
   {key:"published",  name:"На витрине",              color:"var(--teal)"},
   {key:"priced",     name:"Из них с ценой",          color:"var(--green)"},
 ];
-
 const STATUS_COLORS = {
-  "FOUND_EXACT":"var(--green)",
-  "FOUND_PARTIAL":"var(--amber)",
-  "NOT_FOUND":"var(--faint)",
-  "(не обработано)":"var(--violet)",
+  "FOUND_EXACT":"var(--green)", "FOUND_PARTIAL":"var(--amber)",
+  "NOT_FOUND":"var(--faint)", "(не обработано)":"var(--violet)",
 };
 const STATUS_LABELS = {
-  "FOUND_EXACT":"Точное совпадение",
-  "FOUND_PARTIAL":"Частичное",
-  "NOT_FOUND":"Не найдено",
-  "(не обработано)":"Ещё не обработано",
+  "FOUND_EXACT":"Точное совпадение", "FOUND_PARTIAL":"Частичное",
+  "NOT_FOUND":"Не найдено", "(не обработано)":"Ещё не обработано",
 };
 const SITE_NAMES = {
   "kaspi.kz":"Kaspi", "satu.kz":"Satu", "chipdip.kz":"Chipdip", "otvertka.kz":"Otvertka",
-  "wildberries.ru":"Wildberries", "alibaba.com":"Alibaba", "ozon.ru":"Ozon",
-  "market.yandex.ru":"Яндекс.Маркет",
+  "wildberries.ru":"Wildberries", "alibaba.com":"Alibaba", "ozon.ru":"Ozon", "market.yandex.ru":"Яндекс.Маркет",
 };
 
 function render(d){
   const f = d.funnel, fr = d.freshness;
-
-  // карточки свежести
   document.getElementById("cards").innerHTML = `
     <div class="card">
       <div class="lbl">Новых за 24 часа</div>
@@ -300,20 +388,19 @@ function render(d){
     </div>
     <div class="card">
       <div class="lbl">Последний сбор</div>
-      <div class="val" style="font-size:17px">
+      <div class="val" style="font-size:18px">
         <span class="dot" style="background:${freshDot(fr.last_collected,26)}"></span>${ago(fr.last_collected)}
       </div>
       <div class="note">${fr.last_collected ? new Date(fr.last_collected).toLocaleString("ru-RU") : "нет данных"}</div>
     </div>
     <div class="card">
       <div class="lbl">Последняя публикация</div>
-      <div class="val" style="font-size:17px">
+      <div class="val" style="font-size:18px">
         <span class="dot" style="background:${freshDot(fr.last_published,2)}"></span>${ago(fr.last_published)}
       </div>
       <div class="note">${fr.last_published ? new Date(fr.last_published).toLocaleString("ru-RU") : "нет данных"}</div>
     </div>`;
 
-  // воронка
   const base = f.live || 1;
   let prev = f.live;
   document.getElementById("funnel").innerHTML = STAGES.map(s=>{
@@ -332,7 +419,6 @@ function render(d){
     return row;
   }).join("");
 
-  // статусы
   const st = d.by_status || {};
   const order = ["FOUND_EXACT","FOUND_PARTIAL","NOT_FOUND","(не обработано)"];
   const keys = Object.keys(st).sort((a,b)=>{
@@ -351,7 +437,6 @@ function render(d){
     </div>`;
   }).join("");
 
-  // покрытие по площадкам
   const cov = d.coverage || [];
   const covMax = Math.max(1, ...cov.map(c=>c.total));
   document.getElementById("coverage").innerHTML = cov.map(c=>{
@@ -378,8 +463,6 @@ function agoMin(m){
   if(h < 24) return h + " ч назад";
   return Math.floor(h/24) + " дн назад";
 }
-function escHtml(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function escAttr(s){ return escHtml(s).replace(/"/g,"&quot;"); }
 
 async function loadWorkers(){
   try{
@@ -388,12 +471,12 @@ async function loadWorkers(){
     const d = await r.json();
     if(!d.logs_dir_ok){
       document.getElementById("workers").innerHTML =
-        `<div style="color:var(--amber);font-size:13px">Папка логов не примонтирована в контейнер — статус воркеров пока недоступен.</div>`;
+        `<div style="color:var(--amber);font-size:13px">Папка логов не примонтирована в контейнер — статус воркеров недоступен.</div>`;
       return;
     }
     document.getElementById("workers").innerHTML = (d.workers||[]).map(w=>{
       const col = WSTATUS[w.status] || "var(--faint)";
-      const ago = w.exists ? agoMin(w.minutes_ago) : "нет лога";
+      const a = w.exists ? agoMin(w.minutes_ago) : "нет лога";
       const last = w.last_line
         ? `<div class="wlog" title="${escAttr(w.last_line)}">${escHtml(w.last_line)}</div>` : "";
       return `<div class="wrow">
@@ -403,7 +486,7 @@ async function loadWorkers(){
           <div class="wsched">${escHtml(w.schedule)}</div>
           ${last}
         </div>
-        <div class="wago" style="color:${col}">${ago}</div>
+        <div class="wago" style="color:${col}">${a}</div>
       </div>`;
     }).join("");
   }catch(e){
@@ -415,10 +498,7 @@ async function loadWorkers(){
 async function load(){
   try{
     const r = await fetch("/api/admin/health", {headers:{"X-Admin-Token": token}});
-    if(r.status === 401){
-      goLogin();
-      return;
-    }
+    if(r.status === 401){ goLogin(); return; }
     if(!r.ok){ throw new Error("HTTP " + r.status); }
     const d = await r.json();
     show("app");
@@ -430,21 +510,41 @@ async function load(){
   }
 }
 
-// старт
-if(token){ load(); } else { goLogin(); }
-// автообновление раз в 60с
-setInterval(()=>{ if(token && !document.getElementById("app").classList.contains("hidden")) load(); }, 60000);
-// ─────────── Лоты (раздел 1.4) ───────────
-let lotsPage = 1;
-let lotsLoaded = false;
-
+// ── Навигация между разделами ──
+const VIEW_TITLES = {overview:"Обзор", lots:"Лоты", clients:"Клиенты"};
+const VIEW_CRUMBS = {
+  overview:"Здоровье пайплайна сбора и публикации",
+  lots:"Все тендеры из базы — поиск и детали",
+  clients:"Аккаунты пользователей и доступ",
+};
 function switchView(v){
-  document.getElementById("view-health").classList.toggle("hidden", v!=="health");
-  document.getElementById("view-lots").classList.toggle("hidden", v!=="lots");
-  document.getElementById("tab-health").classList.toggle("on", v==="health");
-  document.getElementById("tab-lots").classList.toggle("on", v==="lots");
+  ["overview","lots","clients"].forEach(name=>{
+    document.getElementById("view-"+name).classList.toggle("hidden", name!==v);
+    document.getElementById("nav-"+name).classList.toggle("on", name===v);
+  });
+  document.getElementById("pageTitle").textContent = VIEW_TITLES[v] || "";
+  document.getElementById("pageCrumb").textContent = VIEW_CRUMBS[v] || "";
   if(v==="lots" && !lotsLoaded){ initLots(); }
+  if(v==="clients" && !clientsLoaded){ clientsLoaded = true; loadClients(); }
 }
+function refreshCurrent(){
+  const active = ["overview","lots","clients"].find(n=>!document.getElementById("view-"+n).classList.contains("hidden"));
+  if(active==="lots") loadLots();
+  else if(active==="clients") loadClients();
+  else load();
+}
+
+// старт
+document.getElementById("whoEmail").textContent = localStorage.getItem("tf_email") || "";
+if(token){ load(); } else { goLogin(); }
+setInterval(()=>{
+  if(!token) return;
+  const ov = !document.getElementById("view-overview").classList.contains("hidden");
+  if(ov && !document.getElementById("app").classList.contains("hidden")) load();
+}, 60000);
+
+// ─────────── Лоты ───────────
+let lotsPage = 1, lotsLoaded = false;
 
 async function initLots(){
   lotsLoaded = true;
@@ -458,14 +558,12 @@ async function initLots(){
   }catch(e){}
   loadLots();
 }
-
 function applyFilters(){ lotsPage = 1; loadLots(); }
 function resetFilters(){
   ["f-status","f-price","f-site","f-q","f-minsum"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("f-closed").checked=false;
   lotsPage=1; loadLots();
 }
-
 async function loadLots(){
   const p = new URLSearchParams();
   const g = id => document.getElementById(id).value;
@@ -484,13 +582,11 @@ async function loadLots(){
     renderLots(await r.json());
   }catch(e){ document.getElementById("lots-table").innerHTML = "<p class='err'>Ошибка загрузки</p>"; }
 }
-
 function badge(st){
   const m={FOUND_EXACT:["b-exact","точное"],FOUND_PARTIAL:["b-partial","частичное"],NOT_FOUND:["b-notfound","не найдено"]};
   const c=m[st]||["b-other", st||"—"];
   return "<span class='badge "+c[0]+"'>"+escHtml(c[1])+"</span>";
 }
-
 function renderLots(d){
   document.getElementById("lots-meta").textContent = "Найдено "+fmt(d.total)+" лотов · страница "+d.page+" из "+(d.pages||1);
   const tbl = document.getElementById("lots-table");
@@ -561,7 +657,7 @@ function renderLotDetail(d){
         "<div class='k'>Бренд / модель</div><div>"+escHtml((mr.brand||"—")+" / "+(mr.model||"—"))+"</div>"+
         "<div class='k'>Цена</div><div>"+(mr.price!=null?escHtml(String(mr.price)):"—")+"</div>"+
         "<div class='k'>Площадка</div><div>"+escHtml(mr.source_site||"—")+"</div>"+
-        "<div class='k'>Ссылка</div><div>"+(d.found_url?"<a href='"+escAttr(d.found_url)+"' target='_blank' style='color:#58a6ff'>открыть товар ↗</a>":"—")+"</div>"+
+        "<div class='k'>Ссылка</div><div>"+(d.found_url?"<a href='"+escAttr(d.found_url)+"' target='_blank'>открыть товар ↗</a>":"—")+"</div>"+
         "<div class='k'>Уверенность</div><div>"+(mr.confidence!=null?escHtml(String(mr.confidence)):"—")+"</div>"+
       "</div>";
       if(mr.reason){ h += "<div class='hint' style='margin-top:6px'>Причина: "+escHtml(String(mr.reason))+"</div>"; }
@@ -577,6 +673,85 @@ function renderLotDetail(d){
   }
 }
 
+// ─────────── Клиенты (раздел 2.2) ───────────
+let clientsPage = 1, clientsLoaded = false;
+
+function applyClientFilters(){ clientsPage = 1; loadClients(); }
+function resetClientFilters(){
+  ["c-status","c-role","c-q"].forEach(id=>document.getElementById(id).value="");
+  clientsPage=1; loadClients();
+}
+async function loadClients(){
+  const p = new URLSearchParams();
+  const g = id => document.getElementById(id).value;
+  if(g("c-status")) p.set("status", g("c-status"));
+  if(g("c-role")) p.set("role", g("c-role"));
+  if(g("c-q").trim()) p.set("q", g("c-q").trim());
+  p.set("page", clientsPage); p.set("per_page", 50);
+  document.getElementById("clients-table").innerHTML = "<p class='hint'>Загрузка…</p>";
+  document.getElementById("clients-pager").innerHTML = "";
+  try{
+    const r = await fetch("/api/admin/clients?"+p.toString(), {headers:{"X-Admin-Token": token}});
+    if(!r.ok){ document.getElementById("clients-table").innerHTML="<p class='err'>Ошибка "+r.status+"</p>"; return; }
+    renderClients(await r.json());
+  }catch(e){ document.getElementById("clients-table").innerHTML = "<p class='err'>Ошибка загрузки</p>"; }
+}
+function statCard(label, val, color){
+  return "<div class='card'><div class='lbl'>"+label+"</div><div class='val'"+(color?" style='color:"+color+"'":"")+">"+fmt(val||0)+"</div></div>";
+}
+function renderClients(d){
+  const s = d.stats || {};
+  document.getElementById("client-stats").innerHTML =
+    statCard("Всего клиентов", s.clients) +
+    statCard("Активных", s.active, "var(--green)") +
+    statCard("Заблокировано", s.blocked, (s.blocked>0?"var(--red)":null)) +
+    statCard("Новых за 7 дней", s.new_7d, "var(--teal)");
+  document.getElementById("clients-meta").textContent = "Найдено "+fmt(d.total)+" аккаунтов · страница "+d.page+" из "+(d.pages||1);
+  const tbl = document.getElementById("clients-table");
+  if(!d.clients || !d.clients.length){ tbl.innerHTML="<p class='hint'>Ничего не найдено.</p>"; document.getElementById("clients-pager").innerHTML=""; return; }
+  let h = "<table class='lots'><thead><tr><th>Email</th><th>Роль</th><th>Статус</th><th>Регистрация</th><th>Последний вход</th><th></th></tr></thead><tbody>";
+  d.clients.forEach(c=>{
+    const roleB = c.role==="owner" ? "<span class='badge b-owner'>владелец</span>" : "<span class='badge b-other'>клиент</span>";
+    const statB = c.status==="active" ? "<span class='badge b-exact'>активен</span>" : "<span class='badge b-notfound'>заблокирован</span>";
+    let action = "";
+    if(c.role!=="owner"){
+      action = c.status==="active"
+        ? "<button class='btn-sm btn-danger' onclick=\"blockClient("+c.id+",this)\">Заблокировать</button>"
+        : "<button class='btn-sm btn-ok' onclick=\"unblockClient("+c.id+",this)\">Разблокировать</button>";
+    }
+    h += "<tr>"+
+      "<td>"+escHtml(c.email)+"</td>"+
+      "<td>"+roleB+"</td>"+
+      "<td>"+statB+"</td>"+
+      "<td>"+fmtDate(c.created_at)+"</td>"+
+      "<td>"+(c.last_login?ago(c.last_login):"—")+"</td>"+
+      "<td style='text-align:right'>"+action+"</td>"+
+    "</tr>";
+  });
+  h += "</tbody></table>";
+  tbl.innerHTML = h;
+  let pg = "<button class='btn' "+(d.page<=1?"disabled":"")+" onclick='clientsPage="+(d.page-1)+";loadClients()'>← Назад</button>";
+  pg += "<span class='hint'>"+d.page+" / "+(d.pages||1)+"</span>";
+  pg += "<button class='btn' "+(d.page>=d.pages?"disabled":"")+" onclick='clientsPage="+(d.page+1)+";loadClients()'>Вперёд →</button>";
+  document.getElementById("clients-pager").innerHTML = pg;
+}
+async function blockClient(id, btn){
+  if(!confirm("Заблокировать этот аккаунт? Активные сессии будут завершены.")) return;
+  btn.disabled = true;
+  try{
+    const r = await fetch("/api/admin/client/"+id+"/block", {method:"POST", headers:{"X-Admin-Token": token}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.detail||"Ошибка"); btn.disabled=false; return; }
+    loadClients();
+  }catch(e){ alert("Ошибка соединения"); btn.disabled=false; }
+}
+async function unblockClient(id, btn){
+  btn.disabled = true;
+  try{
+    const r = await fetch("/api/admin/client/"+id+"/unblock", {method:"POST", headers:{"X-Admin-Token": token}});
+    if(!r.ok){ const e=await r.json().catch(()=>({})); alert(e.detail||"Ошибка"); btn.disabled=false; return; }
+    loadClients();
+  }catch(e){ alert("Ошибка соединения"); btn.disabled=false; }
+}
 </script>
 </body>
 </html>

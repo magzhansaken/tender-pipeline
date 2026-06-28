@@ -616,6 +616,81 @@ async def admin_lot_detail(lot_number: str, _: None = Depends(check_admin)):
     }
 
 
+# ─────────── Управление клиентами (Фаза 2.2) ───────────
+@app.get("/api/admin/clients")
+async def admin_clients(
+    _: None = Depends(check_admin),
+    status: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+):
+    """Список аккаунтов с фильтрами, пагинацией и сводкой сверху."""
+    conds, args = [], []
+    if status:
+        args.append(status); conds.append(f"status = ${len(args)}")
+    if role:
+        args.append(role); conds.append(f"role = ${len(args)}")
+    if q:
+        args.append(f"%{q}%"); conds.append(f"email ILIKE ${len(args)}")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+
+    async with app.state.pool.acquire() as con:
+        total = await con.fetchval(f"SELECT count(*) FROM users{where}", *args)
+        stats = await con.fetchrow("""
+            SELECT
+              count(*) FILTER (WHERE role='client')                                          AS clients,
+              count(*) FILTER (WHERE role='client' AND status='active')                      AS active,
+              count(*) FILTER (WHERE status='blocked')                                       AS blocked,
+              count(*) FILTER (WHERE role='client' AND created_at > now()-interval '7 days') AS new_7d
+            FROM users
+        """)
+        offset = (page - 1) * per_page
+        rows = await con.fetch(
+            f"SELECT id, email, role, status, created_at, last_login FROM users{where} "
+            f"ORDER BY created_at DESC NULLS LAST LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
+            *args, per_page, offset,
+        )
+    return {
+        "total": total or 0,
+        "page": page,
+        "per_page": per_page,
+        "pages": ((total or 0) + per_page - 1) // per_page,
+        "stats": {
+            "clients": stats["clients"], "active": stats["active"],
+            "blocked": stats["blocked"], "new_7d": stats["new_7d"],
+        },
+        "clients": [{
+            "id": r["id"], "email": r["email"], "role": r["role"], "status": r["status"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "last_login": r["last_login"].isoformat() if r["last_login"] else None,
+        } for r in rows],
+    }
+
+
+@app.post("/api/admin/client/{uid}/block")
+async def admin_client_block(uid: int, _: None = Depends(check_admin)):
+    async with app.state.pool.acquire() as con:
+        u = await con.fetchrow("SELECT role FROM users WHERE id=$1", uid)
+        if not u:
+            raise HTTPException(status_code=404, detail="Аккаунт не найден")
+        if u["role"] == "owner":
+            raise HTTPException(status_code=403, detail="Нельзя заблокировать владельца")
+        await con.execute("UPDATE users SET status='blocked' WHERE id=$1", uid)
+        await con.execute("DELETE FROM sessions WHERE user_id=$1", uid)  # завершаем активные сессии
+    return {"ok": True, "status": "blocked"}
+
+
+@app.post("/api/admin/client/{uid}/unblock")
+async def admin_client_unblock(uid: int, _: None = Depends(check_admin)):
+    async with app.state.pool.acquire() as con:
+        if not await con.fetchval("SELECT 1 FROM users WHERE id=$1", uid):
+            raise HTTPException(status_code=404, detail="Аккаунт не найден")
+        await con.execute("UPDATE users SET status='active' WHERE id=$1", uid)
+    return {"ok": True, "status": "active"}
+
+
 @app.get("/login")
 async def login_page():
     return FileResponse(str(STATIC_DIR / "login.html"))
