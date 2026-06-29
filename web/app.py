@@ -393,6 +393,8 @@ async def list_lots(
     status: str | None = None,
     category: str | None = None,
     sort: str = "confidence",
+    max_spend: float | None = Query(None, ge=0),
+    min_margin: float | None = Query(None, ge=0),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user=Depends(current_user),
@@ -418,6 +420,17 @@ async def list_lots(
     if category:
         args.append(category)
         where.append(f"category = ${len(args)}")
+
+    # умный подбор по деньгам — только для подписчиков (цена/маржа скрыты у бесплатных)
+    if entitled and max_spend is not None:
+        args.append(max_spend)
+        where.append(
+            f"(purchase_price IS NOT NULL AND quantity IS NOT NULL "
+            f"AND purchase_price * quantity <= ${len(args)})"
+        )
+    if entitled and min_margin is not None:
+        args.append(min_margin)
+        where.append(f"(margin_total IS NOT NULL AND margin_total >= ${len(args)})")
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     order_sql = SORTS.get(sort, SORTS["confidence"])

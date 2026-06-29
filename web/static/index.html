@@ -140,6 +140,26 @@
   .trial-strip svg{width:15px;height:15px;color:var(--warn);flex:0 0 auto}
   .trial-strip a{margin-left:auto;color:var(--accent);font-weight:600;text-decoration:none;white-space:nowrap}
   @media(max-width:560px){.gate-banner{flex-wrap:wrap}.gate-cta{width:100%;text-align:center}}
+  /* Умный подбор (4.1) */
+  .smartbar{background:linear-gradient(120deg,var(--ok-bg),transparent 70%),var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);padding:13px 16px;margin:0 0 14px}
+  .smarthead{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--accent-ink);margin-bottom:11px}
+  .smarthead svg{width:16px;height:16px;color:var(--accent)}
+  .smart-locked{margin-left:auto;font-weight:500;color:var(--faint);font-size:12.5px}
+  .smart-locked a{color:var(--accent);font-weight:600;text-decoration:none}
+  .smart-locked a:hover{color:var(--accent-ink)}
+  .smartfields{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .moneyf{display:flex;flex-direction:column;gap:5px;flex:1;min-width:170px}
+  .moneyf span{font-size:12px;color:var(--muted)}
+  .moneyf input{font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+    background:var(--bg);color:var(--ink);width:100%;appearance:textfield;-moz-appearance:textfield}
+  .moneyf input:focus{outline:none;border-color:var(--accent)}
+  .moneyf input:disabled{background:var(--surface-2);cursor:not-allowed;color:var(--faint)}
+  .smart-reset{font:inherit;font-size:13px;color:var(--muted);background:none;border:1px solid var(--line);
+    border-radius:10px;padding:9px 14px;cursor:pointer;height:38px;white-space:nowrap}
+  .smart-reset:hover{border-color:var(--accent);color:var(--ink)}
+  .smarthint{font-size:12.5px;color:var(--accent-ink);margin-top:10px}
+  .smarthint:empty{display:none}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -207,6 +227,26 @@
     </select>
   </div>
 
+  <div class="smartbar" id="smartbar">
+    <div class="smarthead">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18M6 9h12M10 14h4M11 19h2"/></svg>
+      Умный подбор по деньгам
+      <span class="smart-locked" id="smartLock" hidden>только для подписчиков · <a href="/pricing">открыть доступ</a></span>
+    </div>
+    <div class="smartfields">
+      <label class="moneyf">
+        <span>Мой бюджет на закуп, ₸</span>
+        <input id="maxSpend" type="number" inputmode="numeric" min="0" step="10000" placeholder="напр. 500 000">
+      </label>
+      <label class="moneyf">
+        <span>Хочу заработать от, ₸</span>
+        <input id="minMargin" type="number" inputmode="numeric" min="0" step="10000" placeholder="напр. 2 000 000">
+      </label>
+      <button class="smart-reset" id="smartReset" type="button" hidden>Сбросить</button>
+    </div>
+    <div class="smarthint" id="smartHint"></div>
+  </div>
+
   <div id="gate"></div>
   <p class="meta" id="meta"></p>
   <div id="list"></div>
@@ -225,7 +265,7 @@ const ST = {
   NO_BRAND_NEEDED:{label:"Без бренда",        cls:"neutral"},
   ERROR:          {label:"Ошибка",            cls:"bad"},
 };
-const state = {q:"", status:"", category:"", sort:"confidence", offset:0, limit:25};
+const state = {q:"", status:"", category:"", sort:"confidence", maxSpend:"", minMargin:"", offset:0, limit:25};
 const $ = s => document.querySelector(s);
 const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -303,6 +343,22 @@ function renderGate(){
   </div>`;
 }
 
+function setSmartLock(){
+  const locked = !ACCESS.entitled;
+  const ms = $("#maxSpend"), mm = $("#minMargin"), lk = $("#smartLock");
+  if(ms) ms.disabled = locked;
+  if(mm) mm.disabled = locked;
+  if(lk) lk.hidden = !locked;
+}
+function updateSmartUI(){
+  const any = state.maxSpend || state.minMargin;
+  const rb = $("#smartReset"); if(rb) rb.hidden = !any;
+  const parts = [];
+  if(state.maxSpend) parts.push("закуп ≤ " + Number(state.maxSpend).toLocaleString("ru-RU") + " ₸");
+  if(state.minMargin) parts.push("заработок ≥ " + Number(state.minMargin).toLocaleString("ru-RU") + " ₸");
+  const h = $("#smartHint"); if(h) h.textContent = parts.length ? "Показаны тендеры, где " + parts.join(" и ") : "";
+}
+
 function card(it){
   const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
   const conf = it.confidence||0;
@@ -364,6 +420,8 @@ async function load(){
   if(state.q) p.set("q", state.q);
   if(state.status) p.set("status", state.status);
   if(state.category) p.set("category", state.category);
+  if(state.maxSpend) p.set("max_spend", state.maxSpend);
+  if(state.minMargin) p.set("min_margin", state.minMargin);
   p.set("sort", state.sort);
   p.set("limit", state.limit);
   p.set("offset", state.offset);
@@ -379,6 +437,7 @@ async function load(){
   if(mine!==reqId) return; // пришёл устаревший ответ
   ACCESS = data.access || {entitled:true, trial:false};
   renderGate();
+  setSmartLock();
   const {items, total, offset, limit} = data;
   if(!items.length){
     $("#meta").textContent = "";
@@ -409,6 +468,25 @@ $("#statusPills").addEventListener("click", e => {
 });
 $("#category").addEventListener("change", e => { state.category = e.target.value; state.offset = 0; load(); });
 $("#sort").addEventListener("change", e => { state.sort = e.target.value; state.offset = 0; load(); });
+
+let moneyT;
+function onMoneyInput(){
+  clearTimeout(moneyT);
+  moneyT = setTimeout(() => {
+    state.maxSpend  = ($("#maxSpend").value || "").trim();
+    state.minMargin = ($("#minMargin").value || "").trim();
+    state.offset = 0;
+    updateSmartUI();
+    load();
+  }, 380);
+}
+$("#maxSpend").addEventListener("input", onMoneyInput);
+$("#minMargin").addEventListener("input", onMoneyInput);
+$("#smartReset").addEventListener("click", () => {
+  $("#maxSpend").value = ""; $("#minMargin").value = "";
+  state.maxSpend = ""; state.minMargin = ""; state.offset = 0;
+  updateSmartUI(); load();
+});
 $("#prev").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); load(); window.scrollTo(0,0); });
 $("#next").addEventListener("click", () => { state.offset += state.limit; load(); window.scrollTo(0,0); });
 
