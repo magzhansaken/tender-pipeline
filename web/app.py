@@ -191,10 +191,14 @@ async def _init_auth(pool) -> None:
                 user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 lot_id     BIGINT NOT NULL,
                 status     TEXT DEFAULT 'interested',
+                note       TEXT DEFAULT '',
+                checklist  JSONB DEFAULT '[]'::jsonb,
                 created_at TIMESTAMPTZ DEFAULT now(),
                 PRIMARY KEY (user_id, lot_id)
             );
             ALTER TABLE favorites ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'interested';
+            ALTER TABLE favorites ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '';
+            ALTER TABLE favorites ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '[]'::jsonb;
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
         if OWNER_EMAIL and ADMIN_PASSWORD:
@@ -1194,6 +1198,39 @@ async def set_favorite_status(row_id: int, body: StatusBody, user=Depends(requir
     return {"ok": True, "status": status}
 
 
+CHECK_KEYS = ("ecp", "docs", "price", "security", "submitted")
+
+
+class NoteBody(BaseModel):
+    note: str = ""
+
+
+class ChecklistBody(BaseModel):
+    checklist: list[str] = []
+
+
+@app.post("/api/favorites/{row_id}/note")
+async def set_favorite_note(row_id: int, body: NoteBody, user=Depends(require_user)):
+    """Личная заметка по тендеру."""
+    note = (body.note or "")[:5000]
+    async with app.state.pool.acquire() as con:
+        await con.execute(
+            "UPDATE favorites SET note=$1 WHERE user_id=$2 AND lot_id=$3",
+            note, user["id"], row_id)
+    return {"ok": True}
+
+
+@app.post("/api/favorites/{row_id}/checklist")
+async def set_favorite_checklist(row_id: int, body: ChecklistBody, user=Depends(require_user)):
+    """Чек-лист подготовки к подаче — список отмеченных шагов."""
+    keys = [k for k in (body.checklist or []) if k in CHECK_KEYS]
+    async with app.state.pool.acquire() as con:
+        await con.execute(
+            "UPDATE favorites SET checklist=$1 WHERE user_id=$2 AND lot_id=$3",
+            keys, user["id"], row_id)
+    return {"ok": True, "checklist": keys}
+
+
 @app.get("/api/favorites")
 async def list_favorites(user=Depends(require_user)):
     """Избранные тендеры с закупом и маржой по каждому + ОБЩИЙ ИТОГ по всем."""
@@ -1204,7 +1241,8 @@ async def list_favorites(user=Depends(require_user)):
         rows = await con.fetch("""
             SELECT l.row_id, l.name, l.found_product, l.found_brand, l.found_model,
                    l.purchase_price, l.quantity, l.unit, l.margin, l.margin_pct,
-                   l.margin_total, l.lot_price, t.deadline, f.created_at, f.status
+                   l.margin_total, l.lot_price, t.deadline, f.created_at, f.status,
+                   f.note, f.checklist
             FROM favorites f
             JOIN lots l ON l.row_id = f.lot_id
             LEFT JOIN tenders t ON t.id = l.row_id
@@ -1231,6 +1269,8 @@ async def list_favorites(user=Depends(require_user)):
         d["spend"] = spend
         d["earn"] = earn
         d["status"] = st
+        d["note"] = d.get("note") or ""
+        d["checklist"] = d.get("checklist") or []
         items.append(d)
 
     return {

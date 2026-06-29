@@ -62,8 +62,8 @@
   .sum-note{flex-basis:100%;font-size:12.5px;color:var(--faint);margin-top:2px}
 
   /* карточки избранного */
-  .fav{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;
-    display:flex;gap:16px;align-items:flex-start}
+  .fav{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+  .fav-row{display:flex;gap:16px;align-items:flex-start}
   .fav-main{flex:1;min-width:0}
   .fav .eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:0 0 3px}
   .fav .name{font-size:15.5px;font-weight:600;margin:0 0 7px;line-height:1.35}
@@ -117,6 +117,26 @@
   .note.small{padding:26px 22px}
   .note.small p{margin:0}
 
+  /* Заметки и чек-лист (6.2) */
+  .deal-extra{margin-top:14px;border-top:1px solid var(--line);padding-top:4px}
+  .deal-extra>summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:600;color:var(--accent);padding:8px 0 4px;
+    display:flex;align-items:center;gap:8px}
+  .deal-extra>summary::-webkit-details-marker{display:none}
+  .deal-extra>summary::before{content:"› ";color:var(--faint)}
+  .deal-extra[open]>summary::before{content:"⌄ "}
+  .deal-badge{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);
+    border-radius:999px;padding:1px 9px}
+  .deal-body{padding:8px 2px 4px}
+  .chk-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:10px 0 8px;font-weight:600}
+  .chk{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+  .chk-item{display:flex;align-items:flex-start;gap:10px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:13.5px;color:var(--ink)}
+  .chk-item:hover{background:var(--surface-2)}
+  .chk-item input{margin-top:2px;width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex:0 0 auto}
+  .chk-item.on span{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-2)}
+  .note-in{width:100%;font:inherit;font-size:13.5px;line-height:1.5;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:var(--bg);color:var(--ink);resize:vertical;min-height:64px}
+  .note-in:focus{outline:none;border-color:var(--accent)}
+
   .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:40px 26px;text-align:center}
   .note h2{font-size:19px;margin:0 0 7px;font-weight:650}
   .note p{color:var(--muted);margin:0 auto 18px;max-width:420px;font-size:14.5px}
@@ -126,7 +146,7 @@
   .loading{text-align:center;color:var(--faint);padding:50px}
   @media(max-width:560px){
     .summary{gap:16px} .sum-count{margin-left:0} .sum-divider{display:none}
-    .fav{flex-direction:column} .fav-side{flex-direction:row;width:100%;justify-content:space-between}
+    .fav-row{flex-direction:column} .fav-side{flex-direction:row;width:100%;justify-content:space-between}
   }
 </style>
 </head>
@@ -190,6 +210,29 @@ const STATUSES = [
 const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.k, s]));
 let FAV_DATA = null, filterStatus = "all";
 
+const CHECKLIST = [
+  {k:"ecp",       label:"ЭЦП готова и не истекла"},
+  {k:"docs",      label:"Документы собраны (лицензии, СТ-KZ, уставные)"},
+  {k:"price",     label:"Цена рассчитана через калькулятор"},
+  {k:"security",  label:"Обеспечение заявки внесено"},
+  {k:"submitted", label:"Заявка подана на goszakup"},
+];
+function checklistHtml(it){
+  const done = new Set(it.checklist || []);
+  return CHECKLIST.map(c => `<label class="chk-item${done.has(c.k)?' on':''}">
+    <input type="checkbox" class="chk-box" data-chk="${it.row_id}" data-key="${c.k}"${done.has(c.k)?" checked":""}>
+    <span>${c.label}</span></label>`).join("");
+}
+function dealBadgeInner(it){
+  const done = (it.checklist || []).length;
+  const noteMark = (it.note && it.note.trim()) ? " · 📝 заметка" : "";
+  return `${done}/${CHECKLIST.length}${noteMark}`;
+}
+function updateDealBadge(card, it){
+  const b = card && card.querySelector(".deal-badge");
+  if(b) b.textContent = dealBadgeInner(it);
+}
+
 function favCard(it){
   const bm = [it.found_brand, it.found_model].filter(Boolean).join(" ");
   const prod = it.found_product || bm || "—";
@@ -219,17 +262,28 @@ function favCard(it){
   const opts = STATUSES.map(s => `<option value="${s.k}"${s.k===cur?" selected":""}>${s.label}</option>`).join("");
 
   return `<div class="fav ${cls}" data-id="${it.row_id}">
-    <div class="fav-main">
-      <p class="eyebrow">тендер</p>
-      <p class="name">${esc(it.name||"—")}</p>
-      ${prodLine}
-      <div class="nums">${spendBlock}${earnBlock}</div>
+    <div class="fav-row">
+      <div class="fav-main">
+        <p class="eyebrow">тендер</p>
+        <p class="name">${esc(it.name||"—")}</p>
+        ${prodLine}
+        <div class="nums">${spendBlock}${earnBlock}</div>
+      </div>
+      <div class="fav-side">
+        <select class="st-select ${cls}" data-st="${it.row_id}" title="Стадия сделки">${opts}</select>
+        ${deadlineChip(it.deadline)}
+        <button class="rm" data-rm="${it.row_id}">${RM_SVG} Убрать</button>
+      </div>
     </div>
-    <div class="fav-side">
-      <select class="st-select ${cls}" data-st="${it.row_id}" title="Стадия сделки">${opts}</select>
-      ${deadlineChip(it.deadline)}
-      <button class="rm" data-rm="${it.row_id}">${RM_SVG} Убрать</button>
-    </div>
+    <details class="deal-extra">
+      <summary>📝 Заметки и чек-лист участия <span class="deal-badge">${dealBadgeInner(it)}</span></summary>
+      <div class="deal-body">
+        <div class="chk-title">Подготовка к подаче</div>
+        <div class="chk">${checklistHtml(it)}</div>
+        <div class="chk-title">Заметки по тендеру</div>
+        <textarea class="note-in" data-note="${it.row_id}" rows="3" placeholder="Контакты заказчика, нюансы ТЗ, что уточнить, сроки поставки…">${esc(it.note||"")}</textarea>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -365,6 +419,45 @@ document.addEventListener("click", (e) => {
   if(!tab) return;
   filterStatus = tab.dataset.tab;
   paint();
+});
+
+// чек-лист подготовки (Фаза 6.2)
+document.addEventListener("change", async (e) => {
+  const box = e.target.closest(".chk-box");
+  if(!box || !FAV_DATA) return;
+  const id = box.dataset.chk;
+  const card = box.closest(".fav");
+  const item = box.closest(".chk-item");
+  if(item) item.classList.toggle("on", box.checked);
+  const keys = Array.from(card.querySelectorAll(".chk-box")).filter(b => b.checked).map(b => b.dataset.key);
+  const it = FAV_DATA.items.find(x => String(x.row_id) === String(id));
+  if(it){ it.checklist = keys; updateDealBadge(card, it); }
+  try{
+    await fetch("/api/favorites/" + id + "/checklist", {
+      method: "POST", headers: {"X-Auth-Token": TOKEN, "Content-Type": "application/json"},
+      body: JSON.stringify({checklist: keys}),
+    });
+  }catch(err){}
+});
+
+// заметка по тендеру (автосохранение)
+const noteTimers = {};
+document.addEventListener("input", (e) => {
+  const ta = e.target.closest(".note-in");
+  if(!ta || !FAV_DATA) return;
+  const id = ta.dataset.note;
+  clearTimeout(noteTimers[id]);
+  noteTimers[id] = setTimeout(async () => {
+    const noteText = ta.value;
+    const it = FAV_DATA.items.find(x => String(x.row_id) === String(id));
+    if(it){ it.note = noteText; updateDealBadge(ta.closest(".fav"), it); }
+    try{
+      await fetch("/api/favorites/" + id + "/note", {
+        method: "POST", headers: {"X-Auth-Token": TOKEN, "Content-Type": "application/json"},
+        body: JSON.stringify({note: noteText}),
+      });
+    }catch(err){}
+  }, 600);
 });
 
 // показать email вошедшего
