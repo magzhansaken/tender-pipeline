@@ -418,6 +418,12 @@ _COLS = [
 COLS = ", ".join(_COLS)                       # без префикса
 COLS_L = ", ".join("l." + c for c in _COLS)   # с префиксом l. — для join с tenders
 
+# ключ «тот же товар» — бренд+модель, только когда оба заполнены (Фаза 7.3)
+DKEY = (
+    "CASE WHEN coalesce(btrim(l.found_brand),'')<>'' AND coalesce(btrim(l.found_model),'')<>'' "
+    "THEN lower(btrim(l.found_brand))||'|'||lower(btrim(l.found_model)) ELSE NULL END"
+)
+
 
 def _cache(resp: Response, max_age: int = 60, s_maxage: int = 600) -> None:
     # max-age — кэш браузера, s-maxage — кэш Cloudflare.
@@ -434,6 +440,8 @@ async def list_lots(
     status: str | None = None,
     category: str | None = None,
     region: str | None = None,
+    dbrand: str | None = None,
+    dmodel: str | None = None,
     sort: str = "confidence",
     max_spend: float | None = Query(None, ge=0),
     min_margin: float | None = Query(None, ge=0),
@@ -465,6 +473,15 @@ async def list_lots(
     if region:
         args.append(region)
         where.append(f"tf_region(l.customer) = ${len(args)}")
+    if dbrand and dmodel:
+        args.append(dbrand)
+        pb = len(args)
+        args.append(dmodel)
+        pm = len(args)
+        where.append(
+            f"lower(btrim(l.found_brand)) = lower(btrim(${pb})) "
+            f"AND lower(btrim(l.found_model)) = lower(btrim(${pm}))"
+        )
 
     # умный подбор по деньгам — только для подписчиков (цена/маржа скрыты у бесплатных)
     if entitled and max_spend is not None:
@@ -485,7 +502,10 @@ async def list_lots(
         total = await con.fetchval(
             f"SELECT count(*) FROM lots l LEFT JOIN tenders t ON t.id = l.row_id {where_sql}", *args)
         rows = await con.fetch(
-            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region, t.match_result->'candidates' AS candidates FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
+            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region, "
+            f"t.match_result->'candidates' AS candidates, "
+            f"CASE WHEN {DKEY} IS NOT NULL THEN count(*) OVER (PARTITION BY {DKEY}) ELSE 1 END AS demand_count "
+            f"FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
             f"{where_sql} ORDER BY {order_sql} "
             f"LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
             *args, limit, offset,
