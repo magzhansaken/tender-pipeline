@@ -973,6 +973,7 @@ load();
       if(r.ok){
         const d = await r.json();
         bar.innerHTML = '<span class="who">'+esc(d.email)+'</span>'
+          + '<a href="/cabinet">Кабинет</a>'
           + '<a href="/favorites" class="fav-link">★ Избранное</a>'
           + (d.role==="owner" ? '<a href="/admin">Панель</a>' : '')
           + '<button id="tfLogout">Выйти</button>';

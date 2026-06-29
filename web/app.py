@@ -1385,6 +1385,91 @@ async def list_favorites(user=Depends(require_user)):
     }
 
 
+@app.get("/api/cabinet")
+async def cabinet(user=Depends(require_user)):
+    """Личный кабинет клиента: воронка сделок, деньги, дедлайны, готовность, статус подписки."""
+    entitled, einfo = _entitlement(user)
+    exp = user.get("plan_expires_at")
+    days_left = None
+    if entitled and exp is not None:
+        secs = (exp - datetime.now(timezone.utc)).total_seconds()
+        days_left = max(0, -(-int(secs) // 86400))
+    account = {
+        "email": user.get("email"),
+        "plan": einfo["plan"],
+        "entitled": entitled,
+        "trial": einfo["trial"],
+        "days_left": days_left,
+    }
+
+    async with app.state.pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT f.status, f.checklist, l.margin_total, l.margin_pct, "
+            "l.purchase_price, l.quantity, t.deadline "
+            "FROM favorites f JOIN lots l ON l.row_id = f.lot_id "
+            "LEFT JOIN tenders t ON t.id = l.row_id WHERE f.user_id = $1",
+            user["id"],
+        )
+
+    now = datetime.now(timezone.utc)
+    pipeline = {s: 0 for s in DEAL_STATUSES}
+    potential_earn = won_earn = invest_active = 0.0
+    margins = []
+    urgent = soon = ready = 0
+    ACTIVE = ("interested", "applied")
+    WON = ("won", "executing")
+    for r in rows:
+        st = r["status"] or "interested"
+        pipeline[st] = pipeline.get(st, 0) + 1
+        mt = float(r["margin_total"]) if r["margin_total"] is not None else None
+        if r["margin_pct"] is not None:
+            margins.append(float(r["margin_pct"]))
+        if st in ACTIVE:
+            if mt is not None:
+                potential_earn += mt
+            pp, qty = r["purchase_price"], r["quantity"]
+            if pp is not None and qty:
+                invest_active += float(pp) * qty
+            dl = r["deadline"]
+            if dl is not None:
+                dd = (dl - now).total_seconds() / 86400
+                if 0 <= dd <= 3:
+                    urgent += 1
+                elif 3 < dd <= 7:
+                    soon += 1
+            chk = r["checklist"] or []
+            if isinstance(chk, list) and len(chk) >= len(CHECK_KEYS):
+                ready += 1
+        if st in WON and mt is not None:
+            won_earn += mt
+
+    won_total = pipeline["won"] + pipeline["executing"]
+    active_total = pipeline["interested"] + pipeline["applied"]
+    decided = won_total + pipeline["lost"]
+    return {
+        "account": account,
+        "pipeline": pipeline,
+        "totals": {
+            "saved": len(rows),
+            "active": active_total,
+            "won": won_total,
+            "potential_earn": round(potential_earn),
+            "won_earn": round(won_earn),
+            "invest_active": round(invest_active),
+            "avg_margin": round(sum(margins) / len(margins)) if margins else None,
+            "win_rate": round(100 * won_total / decided) if decided else None,
+            "urgent": urgent,
+            "soon": soon,
+            "ready": ready,
+        },
+    }
+
+
+@app.get("/cabinet")
+async def cabinet_page():
+    return FileResponse(str(STATIC_DIR / "cabinet.html"))
+
+
 @app.get("/favorites")
 async def favorites_page():
     return FileResponse(str(STATIC_DIR / "favorites.html"))
