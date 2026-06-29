@@ -13,6 +13,7 @@
     --ok:#157347; --ok-bg:#e9f5ee;
     --warn:#a85b08; --warn-bg:#fbf1e3;
     --bad:#b23128; --bad-bg:#fbeceb;
+    --neutral-bg:#eceff3;
     --radius:12px;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
@@ -26,6 +27,7 @@
       --ok:#4ec07e; --ok-bg:#13241b;
       --warn:#e0a64a; --warn-bg:#2a2012;
       --bad:#e57368; --bad-bg:#2a1614;
+      --neutral-bg:#1d242e;
     }
   }
   *{box-sizing:border-box}
@@ -148,6 +150,89 @@
     .summary{gap:16px} .sum-count{margin-left:0} .sum-divider{display:none}
     .fav-row{flex-direction:column} .fav-side{flex-direction:row;width:100%;justify-content:space-between}
   }
+  /* ── Инструменты, перенесённые с витрины ── */
+  /* Калькулятор ставки (5.1/5.2) */
+  details.calc{margin:10px 0 0}
+  details.calc>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
+  details.calc>summary::-webkit-details-marker{display:none}
+  details.calc>summary::before{content:"› ";color:var(--faint)}
+  details.calc[open]>summary::before{content:"⌄ "}
+  .calc-body{margin-top:8px;padding:14px 15px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .calc-help{margin:0 0 13px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .calc-help b{color:var(--ink);font-family:var(--mono)}
+  .bid-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+  .bid-head span{font-size:13px;color:var(--muted)}
+  .bid-num{font:inherit;font-family:var(--mono);font-size:15px;font-weight:600;width:140px;text-align:right;
+    padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .bid-num:focus{outline:none;border-color:var(--accent)}
+  .bid-slider{width:100%;accent-color:var(--accent);margin:2px 0 4px;cursor:pointer}
+  .calc-scale{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);font-family:var(--mono);margin-bottom:13px}
+  .calc-out{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:13px}
+  .oc{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:3px}
+  .oc.hl{background:var(--ok-bg);border-color:transparent}
+  .oc .ok2{font-size:11px;color:var(--faint)}
+  .o-val{font-family:var(--mono);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .o-total.pos{color:var(--ok)} .o-total.neg{color:var(--bad)}
+  .calc-break{font-size:12px;color:var(--faint);font-family:var(--mono);margin-bottom:11px}
+  .calc-tip{font-size:12px;color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:8px 11px;margin-bottom:11px;line-height:1.45}
+  .calc-target label{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .calc-target input{font:inherit;font-family:var(--mono);font-size:14px;width:150px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .calc-target input:focus{outline:none;border-color:var(--accent)}
+  .target-hint{font-size:12.5px;margin-top:8px;line-height:1.45}
+  .target-hint.ok{color:var(--accent-ink)}
+  .target-hint.bad{color:var(--bad)}
+  .target-hint:empty{display:none}
+  @media(max-width:560px){.calc-out{grid-template-columns:1fr}}
+  /* Мои расходы (5.2) */
+  .costbar{margin:0 0 18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+  .costbar>summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:13.5px;font-weight:600;color:var(--ink);
+    display:flex;align-items:center;gap:9px}
+  .costbar>summary::-webkit-details-marker{display:none}
+  .costbar>summary svg{width:16px;height:16px;color:var(--accent)}
+  .cost-body{padding:0 16px 16px;border-top:1px solid var(--line)}
+  .cost-help{margin:13px 0 14px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .cost-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
+  .cost-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
+  .cost-grid input{font:inherit;font-family:var(--mono);font-size:14px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:9px;background:var(--bg);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .cost-grid input:focus{outline:none;border-color:var(--accent)}
+  .cost-hint{font-size:11px;color:var(--faint)}
+  /* Все поставщики (7.2) */
+  details.sup{margin:10px 0 0}
+  details.sup>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
+  details.sup>summary::-webkit-details-marker{display:none}
+  details.sup>summary::before{content:"› ";color:var(--faint)}
+  details.sup[open]>summary::before{content:"⌄ "}
+  .sup-body{margin-top:8px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .sup-help{margin:0 0 11px;font-size:12px;color:var(--muted);line-height:1.5}
+  .sup-row{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+    background:var(--surface);margin-bottom:7px;text-decoration:none;color:var(--ink);transition:.15s}
+  .sup-row:last-child{margin-bottom:0}
+  .sup-row:hover{border-color:var(--accent);transform:translateX(2px)}
+  .sup-site{flex:0 0 auto;font-size:11.5px;font-weight:700;color:var(--accent-ink);background:var(--ok-bg);
+    border-radius:6px;padding:3px 8px;text-transform:lowercase}
+  .sup-title{flex:1;min-width:0;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sup-main{flex:0 0 auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-bg);border-radius:5px;padding:2px 7px}
+  .sup-go{flex:0 0 auto;color:var(--faint);font-size:14px}
+  .sup-row:hover .sup-go{color:var(--accent)}
+  /* Сертификаты соответствия */
+  details.cert{margin:10px 0 0}
+  details.cert>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
+  details.cert>summary::-webkit-details-marker{display:none}
+  details.cert>summary::before{content:"› ";color:var(--faint)}
+  details.cert[open]>summary::before{content:"⌄ "}
+  .cert-body{margin-top:8px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .cert-empty{font-size:12.5px;color:var(--muted)}
+  .cert-row{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);margin-bottom:7px}
+  .cert-row:last-child{margin-bottom:0}
+  .cert-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .cert-num{font-family:var(--mono);font-size:12.5px;font-weight:650;color:var(--ink)}
+  .cert-st{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--neutral-bg);border-radius:5px;padding:2px 7px}
+  .cert-st.ok{color:var(--ok);background:var(--ok-bg)}
+  .cert-meta{font-size:11.5px;color:var(--muted);margin-top:5px}
+  .cert-reg{font-size:11.5px;color:var(--accent-ink);margin-top:4px}
+  .cert-more{font-size:11.5px;color:var(--faint);padding:6px 2px 0}
 </style>
 </head>
 <body>
@@ -168,6 +253,19 @@
   <h1>★ Избранное</h1>
   <p class="sub">Корзина сделок: сколько денег уходит на закуп и сколько чистой маржи заработаешь — по каждому тендеру и суммарно.</p>
 
+  <details class="costbar" id="costbar">
+    <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Мои расходы — для расчёта прибыли в кармане</summary>
+    <div class="cost-body">
+      <p class="cost-help">Заполни один раз — калькулятор ставки в каждой сделке будет вычитать это и показывать реальную прибыль, а не просто разницу цен. Настройки общие с витриной.</p>
+      <div class="cost-grid">
+        <label>Налог, % с оборота<input id="c-tax" type="number" min="0" max="100" step="0.5"><span class="cost-hint">ИП упрощёнка ≈ 3%</span></label>
+        <label>Комиссия площадки, %<input id="c-commission" type="number" min="0" max="100" step="0.5"><span class="cost-hint">если закупаешь через маркетплейс</span></label>
+        <label>Доставка, % с оборота<input id="c-delivery" type="number" min="0" max="100" step="0.5"><span class="cost-hint">логистика до заказчика</span></label>
+        <label>Обеспечение заявки, %<input id="c-security" type="number" min="0" max="10" step="0.5"><span class="cost-hint">в госзакупе обычно 1%</span></label>
+      </div>
+    </div>
+  </details>
+
   <div id="root"><div class="loading">Загрузка…</div></div>
 </div>
 
@@ -177,6 +275,148 @@ const $ = s => document.querySelector(s);
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function money(n){ return Math.round(n||0).toLocaleString("ru-RU") + " ₸"; }
 function unitOf(u){ return u ? esc(u) : "шт"; }
+
+// ── инструменты, перенесённые с витрины ──
+const ACCESS = {entitled:true};   // в избранное попадают только по подписке
+
+function loadCosts(){
+  try{ return Object.assign({tax:0,commission:0,delivery:0,security:1}, JSON.parse(localStorage.getItem("tf_costs")||"{}")); }
+  catch(e){ return {tax:0,commission:0,delivery:0,security:1}; }
+}
+let COSTS = loadCosts();
+function saveCosts(){
+  try{ localStorage.setItem("tf_costs", JSON.stringify(COSTS)); }catch(e){}
+  document.querySelectorAll(".calc-body").forEach(b => recalcBid(b));
+}
+function initCosts(){
+  const map = {tax:"c-tax", commission:"c-commission", delivery:"c-delivery", security:"c-security"};
+  for(const k in map){
+    const el = document.getElementById(map[k]);
+    if(!el) continue;
+    el.value = COSTS[k] || 0;
+    el.addEventListener("input", () => { COSTS[k] = Math.max(0, parseFloat(el.value) || 0); saveCosts(); });
+  }
+}
+function deductPct(){ return (COSTS.tax||0) + (COSTS.commission||0) + (COSTS.delivery||0); }
+
+function calcPanel(it){
+  if(!ACCESS.entitled) return "";
+  const cost = it.purchase_price, ceil = it.lot_price, qty = it.quantity||1;
+  if(cost==null || ceil==null || ceil<=cost) return "";
+  const step = Math.max(1, Math.round((ceil-cost)/500));
+  const u = unitOf(it.unit);
+  const d = deductPct()/100;
+  const revenue0 = ceil*qty, deduct0 = revenue0*d, net0 = (ceil-cost)*qty - deduct0;
+  const netMarg0 = revenue0>0 ? Math.round(net0/revenue0*100) : 0;
+  const secure0 = revenue0 * (COSTS.security||0)/100;
+  return `<details class="calc">
+    <summary>🧮 Калькулятор ставки и прибыли</summary>
+    <div class="calc-body" data-cost="${cost}" data-ceil="${ceil}" data-qty="${qty}" data-unit="${esc(u)}">
+      <p class="calc-help">Старт тендера — <b>${money(ceil)}</b> за ${u}, ваш закуп — <b>${money(cost)}</b>. Опускайте ставку, чтобы обойти конкурентов; ниже — реальная прибыль за вычетом ваших расходов.</p>
+      <div class="bid-head">
+        <span>Ваша ставка за ${u}</span>
+        <input class="bid-num" type="number" min="${Math.round(cost)}" max="${Math.round(ceil)}" step="${step}" value="${Math.round(ceil)}">
+      </div>
+      <input class="bid-slider" type="range" min="${cost}" max="${ceil}" step="${step}" value="${ceil}">
+      <div class="calc-scale"><span>закуп ${money(cost)}</span><span>старт ${money(ceil)}</span></div>
+      <div class="calc-out">
+        <div class="oc hl"><span class="ok2">Прибыль в кармане</span><b class="o-val o-total ${net0>0?'pos':'neg'}">${money(net0)}</b></div>
+        <div class="oc"><span class="ok2">Чистая маржа</span><b class="o-val o-marg">${netMarg0}%</b></div>
+        <div class="oc"><span class="ok2">Ниже старта</span><b class="o-val o-under">по старту</b></div>
+        <div class="oc"><span class="ok2">Заморозить (обеспечение)</span><b class="o-val o-secure">${money(secure0)}</b></div>
+      </div>
+      <div class="calc-break o-break">Выручка ${money(revenue0)} − закуп ${money(cost*qty)} − расходы ${money(deduct0)}</div>
+      ${deductPct()===0 ? `<div class="calc-tip">Расходы не заданы — укажи налог/комиссию/доставку в «⚙ Мои расходы» вверху, чтобы видеть прибыль в кармане.</div>` : ``}
+      <div class="calc-target">
+        <label>Хочу заработать чисто, ₸ <input class="bid-target" type="number" min="0" step="10000" placeholder="напр. 100 000"></label>
+        <div class="target-hint"></div>
+      </div>
+    </div>
+  </details>`;
+}
+function recalcBid(body, bid){
+  const cost=+body.dataset.cost, ceil=+body.dataset.ceil, qty=+body.dataset.qty||1;
+  if(bid==null || isNaN(bid)) bid = +body.querySelector(".bid-slider").value;
+  bid = Math.min(ceil, Math.max(cost, bid));
+  body.querySelector(".bid-slider").value = bid;
+  body.querySelector(".bid-num").value = Math.round(bid);
+  const d = deductPct()/100;
+  const revenue = bid*qty, costGoods = cost*qty, deduct = revenue*d;
+  const net = revenue - costGoods - deduct;
+  const netMarg = revenue>0 ? Math.round(net/revenue*100) : 0;
+  const under = ceil-bid, underp = ceil>0 ? Math.round(under/ceil*100) : 0;
+  const secure = ceil*qty*(COSTS.security||0)/100;
+  const tot = body.querySelector(".o-total");
+  tot.textContent = money(net); tot.className = "o-val o-total " + (net>0?"pos":"neg");
+  body.querySelector(".o-marg").textContent = netMarg + "%";
+  body.querySelector(".o-under").textContent = under>0 ? ("−"+money(under)+" · "+underp+"%") : "по старту";
+  body.querySelector(".o-secure").textContent = money(secure);
+  body.querySelector(".o-break").innerHTML = "Выручка " + money(revenue) + " − закуп " + money(costGoods) + " − расходы " + money(deduct);
+}
+function applyTarget(body){
+  const cost=+body.dataset.cost, ceil=+body.dataset.ceil, qty=+body.dataset.qty||1, u=body.dataset.unit||"ед.";
+  const hint = body.querySelector(".target-hint");
+  const t = parseFloat(body.querySelector(".bid-target").value);
+  if(isNaN(t)){ hint.textContent=""; hint.className="target-hint"; return; }
+  const d = deductPct()/100;
+  if(d >= 1){ hint.textContent = "Расходы ≥ 100% оборота — прибыль невозможна."; hint.className = "target-hint bad"; return; }
+  const bid = (t + cost*qty) / (qty*(1-d));
+  if(bid > ceil){
+    const maxNet = (ceil-cost)*qty - ceil*qty*d;
+    hint.textContent = "Недостижимо: максимум чистыми по стартовой цене " + money(maxNet);
+    hint.className = "target-hint bad";
+    recalcBid(body, ceil);
+  }else{
+    hint.textContent = "Ставьте " + money(bid) + " за " + u + " — на " + money(ceil-bid) + " ниже старта, чистыми останется " + money(t);
+    hint.className = "target-hint ok";
+    recalcBid(body, bid);
+  }
+}
+
+function suppliersPanel(it){
+  if(!ACCESS.entitled) return "";
+  const cands = it.candidates;
+  if(!Array.isArray(cands) || cands.length === 0) return "";
+  const rows = cands.map(c => {
+    const main = c.is_main ? `<span class="sup-main">выбран</span>` : "";
+    return `<a class="sup-row" href="${esc(c.url||"#")}" target="_blank" rel="noopener">
+      <span class="sup-site">${esc(c.site||"—")}</span>
+      <span class="sup-title">${esc(c.title||c.url||"")}</span>
+      ${main}<span class="sup-go">↗</span>
+    </a>`;
+  }).join("");
+  return `<details class="sup">
+    <summary>🛒 Все поставщики (${cands.length})</summary>
+    <div class="sup-body">
+      <p class="sup-help">Этот товар найден на разных площадках — открой и сравни цену и наличие. У «выбранного» уже посчитаны цена и маржа.</p>
+      ${rows}
+    </div>
+  </details>`;
+}
+
+function certRows(items, total){
+  const rows = items.map(c => {
+    const ok = (c.status||"").toLowerCase().includes("действ");
+    const stChip = c.status ? `<span class="cert-st${ok?" ok":""}">${esc(c.status)}</span>` : "";
+    const regs = (c.reglaments||[]).length ? `<div class="cert-reg">Тех. регламент: ${(c.reglaments||[]).map(esc).join(", ")}</div>` : "";
+    const meta = [c.applicant, c.pack, c.date].filter(Boolean).map(esc).join(" · ");
+    return `<div class="cert-row">
+      <div class="cert-top"><span class="cert-num">${esc(c.reg_number||"—")}</span>${stChip}</div>
+      ${meta?`<div class="cert-meta">${meta}</div>`:""}
+      ${regs}
+    </div>`;
+  }).join("");
+  const more = total > items.length ? `<div class="cert-more">…и ещё ${total - items.length} в реестре</div>` : "";
+  return rows + more;
+}
+function certPanel(it){
+  const q = [it.found_brand, it.found_model].filter(Boolean).join(" ").trim();
+  if(!q) return "";
+  return `<details class="cert" data-cq="${esc(q)}">
+    <summary>📜 Сертификаты соответствия</summary>
+    <div class="cert-body"><span class="cert-empty">Нажмите, чтобы проверить реестр…</span></div>
+  </details>`;
+}
 
 function plural(n, one, few, many){
   const m10 = n % 10, m100 = n % 100;
@@ -277,6 +517,9 @@ function favCard(it){
         <button class="rm" data-rm="${it.row_id}">${RM_SVG} Убрать</button>
       </div>
     </div>
+    ${calcPanel(it)}
+    ${suppliersPanel(it)}
+    ${certPanel(it)}
     <details class="deal-extra">
       <summary>📝 Заметки и чек-лист участия <span class="deal-badge">${dealBadgeInner(it)}</span></summary>
       <div class="deal-body">
@@ -471,7 +714,36 @@ document.addEventListener("input", (e) => {
   }catch(e){}
 })();
 
-loadFavs();
-</script>
+// ── калькулятор ставки: пересчёт по ползунку/полю/цели ──
+document.addEventListener("input", (e) => {
+  const body = e.target.closest && e.target.closest(".calc-body");
+  if(!body) return;
+  if(e.target.classList.contains("bid-slider") || e.target.classList.contains("bid-num"))
+    recalcBid(body, +e.target.value);
+  else if(e.target.classList.contains("bid-target"))
+    applyTarget(body);
+});
+
+// ── сертификаты: ленивая загрузка при раскрытии (toggle не всплывает → capture) ──
+document.addEventListener("toggle", (e) => {
+  const d = e.target.closest && e.target.closest("details.cert");
+  if(!d || !d.open || d.dataset.loaded) return;
+  d.dataset.loaded = "1";
+  const body = d.querySelector(".cert-body");
+  body.innerHTML = `<span class="cert-empty">Проверяем реестр…</span>`;
+  fetch("/api/certificates?q=" + encodeURIComponent(d.dataset.cq))
+    .then(r => r.json())
+    .then(data => {
+      if(!data.configured){ body.innerHTML = `<span class="cert-empty">Проверка сертификатов скоро появится.</span>`; return; }
+      if(data.error){ body.innerHTML = `<span class="cert-empty">Реестр временно недоступен — попробуйте позже.</span>`; d.dataset.loaded = ""; return; }
+      const items = data.items || [];
+      if(!items.length){ body.innerHTML = `<span class="cert-empty">Действующих сертификатов по этому товару в реестре не найдено.</span>`; return; }
+      body.innerHTML = certRows(items, data.total);
+    })
+    .catch(() => { body.innerHTML = `<span class="cert-empty">Не удалось проверить реестр.</span>`; d.dataset.loaded = ""; });
+}, true);
+
+initCosts();
+loadFavs();</script>
 </body>
 </html>

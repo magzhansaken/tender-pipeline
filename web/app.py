@@ -1438,7 +1438,7 @@ async def list_favorites(user=Depends(require_user)):
             SELECT l.row_id, l.name, l.found_product, l.found_brand, l.found_model,
                    l.purchase_price, l.quantity, l.unit, l.margin, l.margin_pct,
                    l.margin_total, l.lot_price, t.deadline, f.created_at, f.status,
-                   f.note, f.checklist
+                   f.note, f.checklist, t.match_result->'candidates' AS candidates
             FROM favorites f
             JOIN lots l ON l.row_id = f.lot_id
             LEFT JOIN tenders t ON t.id = l.row_id
@@ -1467,6 +1467,7 @@ async def list_favorites(user=Depends(require_user)):
         d["status"] = st
         d["note"] = d.get("note") or ""
         d["checklist"] = d.get("checklist") or []
+        d["candidates"] = d.get("candidates") or []
         items.append(d)
 
     return {
