@@ -34,9 +34,11 @@
   body{
     margin:0; background:var(--bg); color:var(--ink);
     font-family:var(--sans); font-size:15px; line-height:1.5;
-    -webkit-font-smoothing:antialiased;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
   }
   .wrap{max-width:1080px; margin:0 auto; padding:28px 20px 80px}
+  @media(max-width:400px){ .wrap{padding-left:14px; padding-right:14px} }
+  @media(max-width:560px){ input,select,textarea{font-size:16px} }
 
   /* header */
   header h1{font-size:24px; font-weight:650; letter-spacing:-.02em; margin:0}
@@ -336,7 +338,8 @@
     .top{flex-direction:column-reverse; align-items:flex-start}
     .badge{align-self:flex-start}
   }
-  .authbar{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-bottom:8px;min-height:26px;font-size:13px}
+  .authbar{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px;min-height:26px;font-size:13px}
+  .authbar .who{color:var(--muted);max-width:55vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .authbar .who{color:var(--muted)}
   .authbar a,.authbar button{color:var(--accent);background:none;border:1px solid var(--line-2);
     border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
