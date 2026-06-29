@@ -364,18 +364,21 @@ async def auth_change_password(p: PasswordChange, user=Depends(require_user)):
     return {"ok": True, "note": "Пароль изменён, войдите заново"}
 
 SORTS = {
-    "confidence": "confidence DESC NULLS LAST, updated_at DESC",
-    "recent": "updated_at DESC",
-    "name": "name ASC",
-    "margin": "margin_pct DESC NULLS LAST, confidence DESC",
+    "confidence": "l.confidence DESC NULLS LAST, l.updated_at DESC",
+    "recent": "l.updated_at DESC",
+    "name": "l.name ASC",
+    "margin": "l.margin_pct DESC NULLS LAST, l.confidence DESC",
+    "deadline": "(t.deadline IS NULL) ASC, t.deadline ASC, l.updated_at DESC",  # скоро закрываются (NULL в конце)
 }
 
-COLS = (
-    "row_id, name, status, category, category_type, found_brand, found_model, found_product, "
-    "source_url, source_site, confidence, candidates_found, matched_specs, missing_specs, "
-    "conflicts, reason, lot_price, purchase_price, margin, margin_pct, "
-    "quantity, unit, announce_id, margin_total, updated_at"
-)
+_COLS = [
+    "row_id", "name", "status", "category", "category_type", "found_brand", "found_model", "found_product",
+    "source_url", "source_site", "confidence", "candidates_found", "matched_specs", "missing_specs",
+    "conflicts", "reason", "lot_price", "purchase_price", "margin", "margin_pct",
+    "quantity", "unit", "announce_id", "margin_total", "updated_at",
+]
+COLS = ", ".join(_COLS)                       # без префикса
+COLS_L = ", ".join("l." + c for c in _COLS)   # с префиксом l. — для join с tenders
 
 
 def _cache(resp: Response, max_age: int = 60, s_maxage: int = 600) -> None:
@@ -411,35 +414,37 @@ async def list_lots(
         args.append(f"%{q.strip()}%")
         p = len(args)
         where.append(
-            f"(name ILIKE ${p} OR found_product ILIKE ${p} "
-            f"OR found_brand ILIKE ${p} OR found_model ILIKE ${p})"
+            f"(l.name ILIKE ${p} OR l.found_product ILIKE ${p} "
+            f"OR l.found_brand ILIKE ${p} OR l.found_model ILIKE ${p})"
         )
     if status:
         args.append(status)
-        where.append(f"status = ${len(args)}")
+        where.append(f"l.status = ${len(args)}")
     if category:
         args.append(category)
-        where.append(f"category = ${len(args)}")
+        where.append(f"l.category = ${len(args)}")
 
     # умный подбор по деньгам — только для подписчиков (цена/маржа скрыты у бесплатных)
     if entitled and max_spend is not None:
         args.append(max_spend)
         where.append(
-            f"(purchase_price IS NOT NULL AND quantity IS NOT NULL "
-            f"AND purchase_price * quantity <= ${len(args)})"
+            f"(l.purchase_price IS NOT NULL AND l.quantity IS NOT NULL "
+            f"AND l.purchase_price * l.quantity <= ${len(args)})"
         )
     if entitled and min_margin is not None:
         args.append(min_margin)
-        where.append(f"(margin_total IS NOT NULL AND margin_total >= ${len(args)})")
+        where.append(f"(l.margin_total IS NOT NULL AND l.margin_total >= ${len(args)})")
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     order_sql = SORTS.get(sort, SORTS["confidence"])
 
     pool = app.state.pool
     async with pool.acquire() as con:
-        total = await con.fetchval(f"SELECT count(*) FROM lots {where_sql}", *args)
+        total = await con.fetchval(
+            f"SELECT count(*) FROM lots l LEFT JOIN tenders t ON t.id = l.row_id {where_sql}", *args)
         rows = await con.fetch(
-            f"SELECT {COLS} FROM lots {where_sql} ORDER BY {order_sql} "
+            f"SELECT {COLS_L}, t.deadline FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
+            f"{where_sql} ORDER BY {order_sql} "
             f"LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
             *args, limit, offset,
         )
@@ -467,8 +472,8 @@ async def get_lot(row_id: int, response: Response, user=Depends(current_user)):
     pool = app.state.pool
     async with pool.acquire() as con:
         row = await con.fetchrow(
-            f"SELECT {COLS}, brand_in_spec, model_in_spec, time_sec "
-            f"FROM lots WHERE row_id = $1",
+            f"SELECT {COLS_L}, l.brand_in_spec, l.model_in_spec, l.time_sec, t.deadline "
+            f"FROM lots l LEFT JOIN tenders t ON t.id = l.row_id WHERE l.row_id = $1",
             row_id,
         )
     if not row:

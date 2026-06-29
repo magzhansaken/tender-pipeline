@@ -160,6 +160,14 @@
   .smart-reset:hover{border-color:var(--accent);color:var(--ink)}
   .smarthint{font-size:12.5px;color:var(--accent-ink);margin-top:10px}
   .smarthint:empty{display:none}
+  /* Чип срока (4.2) */
+  .top-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+  .dl-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
+    padding:3px 9px;border-radius:7px;white-space:nowrap;line-height:1.3}
+  .dl-urgent{background:var(--bad-bg);color:var(--bad)}
+  .dl-soon{background:var(--warn-bg);color:var(--warn)}
+  .dl-ok{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+  .dl-closed{background:var(--surface-2);color:var(--faint);text-decoration:line-through}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -224,6 +232,7 @@
       <option value="recent">Сначала новые</option>
       <option value="name">По названию</option>
       <option value="margin">По марже</option>
+      <option value="deadline">Скоро закрываются</option>
     </select>
   </div>
 
@@ -359,6 +368,24 @@ function updateSmartUI(){
   const h = $("#smartHint"); if(h) h.textContent = parts.length ? "Показаны тендеры, где " + parts.join(" и ") : "";
 }
 
+function plural(n, one, few, many){
+  const m10 = n % 10, m100 = n % 100;
+  if(m10===1 && m100!==11) return one;
+  if(m10>=2 && m10<=4 && (m100<10 || m100>=20)) return few;
+  return many;
+}
+function deadlineChip(it){
+  if(!it.deadline) return "";
+  const dl = new Date(it.deadline);
+  if(isNaN(dl.getTime())) return "";
+  const days = Math.ceil((dl - new Date())/86400000);
+  if(days < 0)   return `<span class="dl-chip dl-closed">приём завершён</span>`;
+  if(days === 0) return `<span class="dl-chip dl-urgent">⏰ сегодня</span>`;
+  if(days <= 3)  return `<span class="dl-chip dl-urgent">⏰ ${days} ${plural(days,"день","дня","дней")}</span>`;
+  if(days <= 7)  return `<span class="dl-chip dl-soon">${days} ${plural(days,"день","дня","дней")}</span>`;
+  return `<span class="dl-chip dl-ok">до ${dl.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}</span>`;
+}
+
 function card(it){
   const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
   const conf = it.confidence||0;
@@ -393,7 +420,10 @@ function card(it){
           <p class="eyebrow">${esc(it.category||"без категории")}</p>
           <h2 class="name">${esc(it.name||"—")}</h2>
         </div>
-        <span class="badge ${st.cls}">${esc(st.label)}</span>
+        <div class="top-right">
+          <span class="badge ${st.cls}">${esc(st.label)}</span>
+          ${deadlineChip(it)}
+        </div>
       </div>
       ${found}
       <div class="row2">
