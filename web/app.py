@@ -190,9 +190,11 @@ async def _init_auth(pool) -> None:
             CREATE TABLE IF NOT EXISTS favorites (
                 user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 lot_id     BIGINT NOT NULL,
+                status     TEXT DEFAULT 'interested',
                 created_at TIMESTAMPTZ DEFAULT now(),
                 PRIMARY KEY (user_id, lot_id)
             );
+            ALTER TABLE favorites ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'interested';
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
         if OWNER_EMAIL and ADMIN_PASSWORD:
@@ -1172,6 +1174,26 @@ async def remove_favorite(row_id: int, user=Depends(require_user)):
     return {"ok": True, "favorited": False}
 
 
+DEAL_STATUSES = ("interested", "applied", "won", "executing", "lost")
+
+
+class StatusBody(BaseModel):
+    status: str
+
+
+@app.post("/api/favorites/{row_id}/status")
+async def set_favorite_status(row_id: int, body: StatusBody, user=Depends(require_user)):
+    """Стадия сделки по тендеру: интересно → подал → выиграл → исполняю / проиграл."""
+    status = (body.status or "").strip()
+    if status not in DEAL_STATUSES:
+        raise HTTPException(status_code=400, detail="Неизвестный статус")
+    async with app.state.pool.acquire() as con:
+        await con.execute(
+            "UPDATE favorites SET status=$1 WHERE user_id=$2 AND lot_id=$3",
+            status, user["id"], row_id)
+    return {"ok": True, "status": status}
+
+
 @app.get("/api/favorites")
 async def list_favorites(user=Depends(require_user)):
     """Избранные тендеры с закупом и маржой по каждому + ОБЩИЙ ИТОГ по всем."""
@@ -1182,7 +1204,7 @@ async def list_favorites(user=Depends(require_user)):
         rows = await con.fetch("""
             SELECT l.row_id, l.name, l.found_product, l.found_brand, l.found_model,
                    l.purchase_price, l.quantity, l.unit, l.margin, l.margin_pct,
-                   l.margin_total, l.lot_price, t.deadline, f.created_at
+                   l.margin_total, l.lot_price, t.deadline, f.created_at, f.status
             FROM favorites f
             JOIN lots l ON l.row_id = f.lot_id
             LEFT JOIN tenders t ON t.id = l.row_id
@@ -1191,6 +1213,8 @@ async def list_favorites(user=Depends(require_user)):
         """, user["id"])
 
     items, spend_total, earn_total, with_nums = [], 0.0, 0.0, 0
+    counts = {s: 0 for s in DEAL_STATUSES}
+    won_earn = 0.0
     for r in rows:
         d = dict(r)
         pp, qty = r["purchase_price"], r["quantity"]
@@ -1200,8 +1224,13 @@ async def list_favorites(user=Depends(require_user)):
             spend_total += spend
             earn_total += earn
             with_nums += 1
+        st = d.get("status") or "interested"
+        counts[st] = counts.get(st, 0) + 1
+        if st in ("won", "executing") and earn is not None:
+            won_earn += earn
         d["spend"] = spend
         d["earn"] = earn
+        d["status"] = st
         items.append(d)
 
     return {
@@ -1209,7 +1238,9 @@ async def list_favorites(user=Depends(require_user)):
         "totals": {
             "count": len(items), "with_numbers": with_nums,
             "spend": round(spend_total), "earn": round(earn_total),
+            "won_earn": round(won_earn),
         },
+        "statuses": counts,
     }
 
 

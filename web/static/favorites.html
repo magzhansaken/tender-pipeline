@@ -93,6 +93,30 @@
   .alert-bar.soon{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn)}
   .alert-tx{font-size:13.5px;font-weight:600;color:var(--ink)}
 
+  /* Воронка сделок (6.1) */
+  .sum-block .v.won{color:var(--accent-ink)}
+  .st-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .st-tab{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:13px;font-weight:600;color:var(--muted);
+    background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer}
+  .st-tab:hover{border-color:var(--accent);color:var(--ink)}
+  .st-tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .st-tab-n{font-size:11.5px;background:var(--surface-2);color:var(--muted);border-radius:999px;padding:1px 7px;min-width:18px;text-align:center}
+  .st-tab.on .st-tab-n{background:rgba(255,255,255,.25);color:#fff}
+  .st-select{font:inherit;font-size:12.5px;font-weight:600;padding:5px 9px;border-radius:8px;border:1px solid var(--line);
+    background:var(--surface);color:var(--ink);cursor:pointer;max-width:160px}
+  .st-select:focus{outline:none;border-color:var(--accent)}
+  .st-select.st-app{color:var(--warn);border-color:var(--warn)}
+  .st-select.st-won{color:var(--ok);border-color:var(--ok)}
+  .st-select.st-exe{color:var(--accent);border-color:var(--accent)}
+  .st-select.st-lost{color:var(--bad);border-color:var(--bad)}
+  .fav.st-int{border-left:3px solid var(--faint)}
+  .fav.st-app{border-left:3px solid var(--warn)}
+  .fav.st-won{border-left:3px solid var(--ok)}
+  .fav.st-exe{border-left:3px solid var(--accent)}
+  .fav.st-lost{border-left:3px solid var(--bad)}
+  .note.small{padding:26px 22px}
+  .note.small p{margin:0}
+
   .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:40px 26px;text-align:center}
   .note h2{font-size:19px;margin:0 0 7px;font-weight:650}
   .note p{color:var(--muted);margin:0 auto 18px;max-width:420px;font-size:14.5px}
@@ -156,6 +180,16 @@ function note(title, text, btnHref, btnText){
   return `<div class="note"><h2>${title}</h2><p>${text}</p>${btnHref?`<a class="btn" href="${btnHref}">${btnText}</a>`:""}</div>`;
 }
 
+const STATUSES = [
+  {k:"interested", label:"Интересно",   cls:"st-int"},
+  {k:"applied",    label:"Подал заявку", cls:"st-app"},
+  {k:"won",        label:"Выиграл",      cls:"st-won"},
+  {k:"executing",  label:"Исполняю",     cls:"st-exe"},
+  {k:"lost",       label:"Проиграл",     cls:"st-lost"},
+];
+const STATUS_MAP = Object.fromEntries(STATUSES.map(s => [s.k, s]));
+let FAV_DATA = null, filterStatus = "all";
+
 function favCard(it){
   const bm = [it.found_brand, it.found_model].filter(Boolean).join(" ");
   const prod = it.found_product || bm || "—";
@@ -180,7 +214,11 @@ function favCard(it){
     earnBlock = `<div class="num"><span class="nk">Заработок (маржа)</span><span class="nv" style="color:var(--faint)">—</span></div>`;
   }
 
-  return `<div class="fav" data-id="${it.row_id}">
+  const cur = it.status || "interested";
+  const cls = (STATUS_MAP[cur] || STATUS_MAP.interested).cls;
+  const opts = STATUSES.map(s => `<option value="${s.k}"${s.k===cur?" selected":""}>${s.label}</option>`).join("");
+
+  return `<div class="fav ${cls}" data-id="${it.row_id}">
     <div class="fav-main">
       <p class="eyebrow">тендер</p>
       <p class="name">${esc(it.name||"—")}</p>
@@ -188,6 +226,7 @@ function favCard(it){
       <div class="nums">${spendBlock}${earnBlock}</div>
     </div>
     <div class="fav-side">
+      <select class="st-select ${cls}" data-st="${it.row_id}" title="Стадия сделки">${opts}</select>
       ${deadlineChip(it.deadline)}
       <button class="rm" data-rm="${it.row_id}">${RM_SVG} Убрать</button>
     </div>
@@ -219,27 +258,45 @@ function alertStrip(items){
   return `<div class="alert-bar ${cls}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="alert-tx">${txt}</span></div>`;
 }
 
-function render(data){
+function render(data){ FAV_DATA = data; paint(); }
+
+function tabBtn(k, label, n){
+  return `<button class="st-tab${filterStatus===k?' on':''}" data-tab="${k}">${label}<span class="st-tab-n">${n}</span></button>`;
+}
+
+function paint(){
   const root = $("#root");
-  const items = data.items || [];
-  const t = data.totals || {count:0, spend:0, earn:0, with_numbers:0};
-  if(!items.length){
+  if(!FAV_DATA) return;
+  const all = FAV_DATA.items || [];
+  const t = FAV_DATA.totals || {count:0, spend:0, earn:0, with_numbers:0, won_earn:0};
+  const sc = FAV_DATA.statuses || {};
+  if(!all.length){
     root.innerHTML = note("В избранном пока пусто",
       "Открой витрину и нажми звёздочку ★ на интересных тендерах — они появятся здесь, и я сразу посчитаю закуп и маржу.",
       "/", "Перейти к витрине");
     return;
   }
+  const items = filterStatus === "all" ? all : all.filter(it => (it.status||"interested") === filterStatus);
   const noteTxt = t.with_numbers < t.count
     ? `<div class="sum-note">Итог посчитан по ${t.with_numbers} из ${t.count} тендеров — у остальных цена поставщика пока не найдена.</div>`
     : "";
   const summary = `<div class="summary">
     <div class="sum-block"><span class="k">Всего уходит на закуп</span><span class="v spend">${money(t.spend)}</span></div>
     <div class="sum-divider"></div>
-    <div class="sum-block"><span class="k">Всего заработаешь (чистая маржа)</span><span class="v earn">${money(t.earn)}</span></div>
-    <div class="sum-count"><div class="n">${t.count}</div><div class="l">${plural(t.count,"тендер","тендера","тендеров")} в избранном</div></div>
+    <div class="sum-block"><span class="k">Заработаешь (маржа)</span><span class="v earn">${money(t.earn)}</span></div>
+    <div class="sum-divider"></div>
+    <div class="sum-block"><span class="k">Выиграно (маржа)</span><span class="v won">${money(t.won_earn||0)}</span></div>
+    <div class="sum-count"><div class="n">${t.count}</div><div class="l">${plural(t.count,"тендер","тендера","тендеров")}</div></div>
     ${noteTxt}
   </div>`;
-  root.innerHTML = alertStrip(items) + summary + items.map(favCard).join("");
+  const tabs = `<div class="st-tabs">`
+    + tabBtn("all", "Все", all.length)
+    + STATUSES.map(s => tabBtn(s.k, s.label, sc[s.k]||0)).join("")
+    + `</div>`;
+  const list = items.length
+    ? items.map(favCard).join("")
+    : `<div class="note small"><p>Нет тендеров в этой стадии.</p></div>`;
+  root.innerHTML = alertStrip(all) + summary + tabs + list;
 }
 
 async function loadFavs(){
@@ -271,6 +328,43 @@ document.addEventListener("click", async (e) => {
     if(r.ok){ loadFavs(); }   // перезагружаем — пересчитываем итоги
     else btn.disabled = false;
   }catch(e){ btn.disabled = false; }
+});
+
+// смена стадии сделки (мини-CRM, Фаза 6.1)
+document.addEventListener("change", async (e) => {
+  const sel = e.target.closest(".st-select");
+  if(!sel || !FAV_DATA) return;
+  const id = sel.dataset.st, status = sel.value;
+  sel.disabled = true;
+  try{
+    const r = await fetch("/api/favorites/" + id + "/status", {
+      method: "POST",
+      headers: {"X-Auth-Token": TOKEN, "Content-Type": "application/json"},
+      body: JSON.stringify({status}),
+    });
+    if(r.ok){
+      const it = (FAV_DATA.items||[]).find(x => String(x.row_id) === String(id));
+      if(it){
+        const old = it.status; it.status = status;
+        if(FAV_DATA.statuses){
+          FAV_DATA.statuses[old] = Math.max(0, (FAV_DATA.statuses[old]||0) - 1);
+          FAV_DATA.statuses[status] = (FAV_DATA.statuses[status]||0) + 1;
+        }
+        let w = 0;
+        FAV_DATA.items.forEach(x => { if((x.status==="won"||x.status==="executing") && x.earn!=null) w += x.earn; });
+        if(FAV_DATA.totals) FAV_DATA.totals.won_earn = Math.round(w);
+      }
+      paint();
+    }else{ sel.disabled = false; }
+  }catch(err){ sel.disabled = false; }
+});
+
+// переключение вкладок воронки
+document.addEventListener("click", (e) => {
+  const tab = e.target.closest(".st-tab");
+  if(!tab) return;
+  filterStatus = tab.dataset.tab;
+  paint();
 });
 
 // показать email вошедшего
