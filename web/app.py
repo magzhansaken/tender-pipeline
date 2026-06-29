@@ -403,6 +403,7 @@ async def auth_change_password(p: PasswordChange, user=Depends(require_user)):
 
 SORTS = {
     "confidence": "l.confidence DESC NULLS LAST, l.updated_at DESC",
+    "demand": "demand_count DESC NULLS LAST, l.confidence DESC NULLS LAST",
     "recent": "l.updated_at DESC",
     "name": "l.name ASC",
     "margin": "l.margin_pct DESC NULLS LAST, l.confidence DESC",
