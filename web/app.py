@@ -441,6 +441,7 @@ async def list_lots(
     status: str | None = None,
     category: str | None = None,
     region: str | None = None,
+    customer: str | None = None,
     dbrand: str | None = None,
     dmodel: str | None = None,
     sort: str = "confidence",
@@ -474,6 +475,9 @@ async def list_lots(
     if region:
         args.append(region)
         where.append(f"tf_region(l.customer) = ${len(args)}")
+    if customer:
+        args.append(customer)
+        where.append(f"l.customer = ${len(args)}")
     if dbrand and dmodel:
         args.append(dbrand)
         pb = len(args)
@@ -503,7 +507,7 @@ async def list_lots(
         total = await con.fetchval(
             f"SELECT count(*) FROM lots l LEFT JOIN tenders t ON t.id = l.row_id {where_sql}", *args)
         rows = await con.fetch(
-            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region, "
+            f"SELECT {COLS_L}, l.customer, t.deadline, tf_region(l.customer) AS region, "
             f"t.match_result->'candidates' AS candidates, "
             f"CASE WHEN {DKEY} IS NOT NULL THEN count(*) OVER (PARTITION BY {DKEY}) ELSE 1 END AS demand_count "
             f"FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
@@ -548,6 +552,38 @@ async def get_lot(row_id: int, response: Response, user=Depends(current_user)):
         d["locked"] = True
     response.headers["Cache-Control"] = "private, no-store"
     return d
+
+
+@app.get("/api/customer")
+async def customer_info(name: str, response: Response):
+    """Профиль заказчика: сколько тендеров, суммарный бюджет, регион, топ категории."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        agg = await con.fetchrow(
+            "SELECT count(*) AS tenders, "
+            "count(*) FILTER (WHERE purchase_price IS NOT NULL) AS priced, "
+            "count(*) FILTER (WHERE status='FOUND_EXACT') AS exact, "
+            "COALESCE(sum(lot_price * quantity), 0) AS total_value "
+            "FROM lots WHERE customer = $1",
+            name,
+        )
+        cats = await con.fetch(
+            "SELECT category, count(*) AS c FROM lots "
+            "WHERE customer = $1 AND category IS NOT NULL AND btrim(category) <> '' "
+            "GROUP BY category ORDER BY c DESC LIMIT 5",
+            name,
+        )
+        region = await con.fetchval("SELECT tf_region($1)", name)
+    _cache(response)
+    return {
+        "name": name,
+        "tenders": agg["tenders"],
+        "priced": agg["priced"],
+        "exact": agg["exact"],
+        "total_value": float(agg["total_value"]) if agg["total_value"] is not None else 0,
+        "region": region,
+        "categories": [{"category": r["category"], "count": r["c"]} for r in cats],
+    }
 
 
 @app.get("/api/regions")

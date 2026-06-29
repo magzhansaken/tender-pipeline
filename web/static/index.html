@@ -190,6 +190,28 @@
     border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;white-space:nowrap}
   .demand-reset:hover{border-color:var(--accent);color:var(--ink)}
   @media(max-width:560px){.demand-bar{flex-wrap:wrap}.demand-tx{flex-basis:100%}}
+  /* Инфо о заказчике (7.4) */
+  .cust{display:inline-flex;align-items:center;gap:5px;margin:6px 0 0;max-width:100%;font:inherit;font-size:12px;
+    color:var(--muted);background:none;border:none;padding:0;cursor:pointer;text-align:left;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cust:hover{color:var(--accent)}
+  .cust-bar{background:linear-gradient(125deg,var(--accent-bg,rgba(14,124,107,.06)),transparent 70%),var(--surface);
+    border:1px solid var(--accent);border-radius:var(--radius);padding:15px 17px;margin:0 0 14px}
+  .cust-load{font-size:13px;color:var(--muted)}
+  .cust-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+  .cust-id{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);min-width:0}
+  .cust-id b{font-weight:700}
+  .cust-ic{font-size:18px;flex:0 0 auto}
+  .cust-reset{flex:0 0 auto;font:inherit;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);
+    border:1px solid var(--line);border-radius:9px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+  .cust-reset:hover{border-color:var(--accent);color:var(--ink)}
+  .cust-stats{display:flex;flex-wrap:wrap;gap:22px}
+  .cust-stat{display:flex;flex-direction:column;gap:2px}
+  .cust-stat .cv{font-size:18px;font-weight:700;color:var(--accent-ink)}
+  .cust-stat .cl{font-size:11.5px;color:var(--muted)}
+  .cust-cats{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+  .cust-cats-l{font-size:12px;color:var(--faint);font-weight:600}
+  .cust-cat{font-size:12px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:3px 9px}
   /* Несколько поставщиков (7.2) */
   details.sup{margin:10px 0 0}
   details.sup>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
@@ -374,6 +396,7 @@
   <div id="alert"></div>
   <div id="gate"></div>
   <div id="demandBar"></div>
+  <div id="customerBar"></div>
   <p class="meta" id="meta"></p>
   <div id="list"></div>
   <div class="pager" id="pager" hidden>
@@ -391,7 +414,7 @@ const ST = {
   NO_BRAND_NEEDED:{label:"Без бренда",        cls:"neutral"},
   ERROR:          {label:"Ошибка",            cls:"bad"},
 };
-const state = {q:"", status:"", category:"", region:"", sort:"confidence", maxSpend:"", minMargin:"", dbrand:"", dmodel:"", offset:0, limit:25};
+const state = {q:"", status:"", category:"", region:"", sort:"confidence", maxSpend:"", minMargin:"", dbrand:"", dmodel:"", customer:"", offset:0, limit:25};
 const $ = s => document.querySelector(s);
 const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -438,6 +461,35 @@ function renderDemandBar(){
     <span class="demand-tx">Показаны все тендеры на <b>${esc(state.dbrand)} ${esc(state.dmodel)}</b> — закупи раз, участвуй во всех</span>
     <button class="demand-reset">Сбросить ✕</button>
   </div>`;
+}
+
+// ── профиль заказчика (Фаза 7.4) ──
+async function renderCustomerBar(){
+  const el = document.getElementById("customerBar");
+  if(!el) return;
+  if(!state.customer){ el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="cust-bar"><div class="cust-load">Профиль заказчика…</div></div>`;
+  try{
+    const d = await (await fetch("/api/customer?name=" + encodeURIComponent(state.customer))).json();
+    const cats = (d.categories||[]).map(c => `<span class="cust-cat">${esc(c.category)} · ${c.count}</span>`).join("");
+    const region = (d.region && d.region!=="Не указан" && d.region!=="Другой регион")
+      ? `<div class="cust-stat"><span class="cv">${esc(d.region)}</span><span class="cl">регион</span></div>` : "";
+    el.innerHTML = `<div class="cust-bar">
+      <div class="cust-head">
+        <div class="cust-id"><span class="cust-ic">🏛</span><b>${esc(d.name)}</b></div>
+        <button class="cust-reset">Сбросить ✕</button>
+      </div>
+      <div class="cust-stats">
+        <div class="cust-stat"><span class="cv">${d.tenders}</span><span class="cl">${plural(d.tenders,"тендер","тендера","тендеров")} на витрине</span></div>
+        <div class="cust-stat"><span class="cv">${money(d.total_value)}</span><span class="cl">суммарный бюджет</span></div>
+        <div class="cust-stat"><span class="cv">${d.priced}</span><span class="cl">с найденной ценой</span></div>
+        ${region}
+      </div>
+      ${cats ? `<div class="cust-cats"><span class="cust-cats-l">Закупает:</span>${cats}</div>` : ""}
+    </div>`;
+  }catch(e){
+    el.innerHTML = `<div class="cust-bar"><div class="cust-head"><div class="cust-id"><span class="cust-ic">🏛</span><b>${esc(state.customer)}</b></div><button class="cust-reset">Сбросить ✕</button></div></div>`;
+  }
 }
 
 function specChips(arr, cls){
@@ -660,6 +712,7 @@ function card(it){
           <p class="eyebrow">${esc(it.category||"без категории")}</p>
           <h2 class="name">${esc(it.name||"—")}</h2>
           ${(it.region && it.region!=="Не указан" && it.region!=="Другой регион") ? `<p class="loc">📍 ${esc(it.region)}</p>` : ""}
+          ${(it.customer && !state.customer) ? `<button class="cust" data-cust="${esc(it.customer)}" title="Показать все тендеры заказчика">🏛 ${esc(it.customer)}</button>` : ""}
         </div>
         <div class="top-right">
           ${ACCESS.entitled ? `<button class="fav-btn${FAVS.has(it.row_id)?' on':''}" data-fav="${it.row_id}" title="${FAVS.has(it.row_id)?'В избранном':'В избранное'}" aria-label="В избранное">${FAVS.has(it.row_id)?STAR_FILL:STAR_LINE}</button>` : ""}
@@ -766,6 +819,7 @@ let reqId = 0;
 async function load(){
   const mine = ++reqId;
   renderDemandBar();
+  renderCustomerBar();
   await ensureFavs();
   $("#list").innerHTML = `<div class="state">Загрузка…</div>`;
   const p = new URLSearchParams();
@@ -773,6 +827,7 @@ async function load(){
   if(state.status) p.set("status", state.status);
   if(state.category) p.set("category", state.category);
   if(state.region) p.set("region", state.region);
+  if(state.customer) p.set("customer", state.customer);
   if(state.dbrand) p.set("dbrand", state.dbrand);
   if(state.dmodel) p.set("dmodel", state.dmodel);
   if(state.maxSpend) p.set("max_spend", state.maxSpend);
@@ -863,6 +918,19 @@ $("#list").addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   if(!e.target.closest(".demand-reset")) return;
   state.dbrand = ""; state.dmodel = ""; state.offset = 0;
+  load(); window.scrollTo(0, 0);
+});
+
+// ── профиль заказчика: клик по имени и сброс (Фаза 7.4) ──
+$("#list").addEventListener("click", (e) => {
+  const b = e.target.closest(".cust");
+  if(!b) return;
+  state.customer = b.dataset.cust; state.offset = 0;
+  load(); window.scrollTo(0, 0);
+});
+document.addEventListener("click", (e) => {
+  if(!e.target.closest(".cust-reset")) return;
+  state.customer = ""; state.offset = 0;
   load(); window.scrollTo(0, 0);
 });
 
