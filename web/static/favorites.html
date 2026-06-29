@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Избранное — TenderFinder</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --surface:#ffffff; --surface-2:#fafbfc;
+    --line:#e6e8ec; --line-2:#d4d8df;
+    --ink:#10141d; --muted:#5b6472; --faint:#969eaa;
+    --accent:#0e7c6b; --accent-ink:#0a584c;
+    --ok:#157347; --ok-bg:#e9f5ee;
+    --warn:#a85b08; --warn-bg:#fbf1e3;
+    --bad:#b23128; --bad-bg:#fbeceb;
+    --radius:12px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1116; --surface:#161b22; --surface-2:#1a2029;
+      --line:#262d38; --line-2:#333c49;
+      --ink:#e7eaef; --muted:#9aa4b2; --faint:#6b7585;
+      --accent:#34b3a0; --accent-ink:#7fd6c8;
+      --ok:#4ec07e; --ok-bg:#13241b;
+      --warn:#e0a64a; --warn-bg:#2a2012;
+      --bad:#e57368; --bad-bg:#2a1614;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 20px 80px}
+
+  .top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:18px;letter-spacing:-.015em;color:var(--ink)}
+  .brand .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#10b981);display:flex;align-items:center;justify-content:center}
+  .brand .mark svg{width:16px;height:16px}
+  .topnav{display:flex;align-items:center;gap:8px;font-size:14px}
+  .topnav a{padding:8px 13px;border-radius:9px;color:var(--muted)}
+  .topnav a:hover{color:var(--ink)}
+  .topnav .back{border:1px solid var(--line)}
+  .who{color:var(--muted);font-size:13px}
+
+  h1{font-size:23px;font-weight:650;letter-spacing:-.02em;margin:24px 0 3px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+
+  /* итоговая «корзина» */
+  .summary{background:linear-gradient(120deg,var(--ok-bg),transparent 75%),var(--surface);
+    border:1px solid var(--accent);border-radius:16px;padding:20px 22px;margin-bottom:22px;
+    display:flex;gap:26px;flex-wrap:wrap;align-items:center}
+  .sum-block{display:flex;flex-direction:column;gap:3px}
+  .sum-block .k{font-size:12.5px;color:var(--muted)}
+  .sum-block .v{font-family:var(--mono);font-size:27px;font-weight:680;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .sum-block .v.spend{color:var(--ink)}
+  .sum-block .v.earn{color:var(--ok)}
+  .sum-divider{width:1px;align-self:stretch;background:var(--line)}
+  .sum-count{margin-left:auto;text-align:right}
+  .sum-count .n{font-size:30px;font-weight:700;color:var(--accent-ink);line-height:1}
+  .sum-count .l{font-size:12.5px;color:var(--muted)}
+  .sum-note{flex-basis:100%;font-size:12.5px;color:var(--faint);margin-top:2px}
+
+  /* карточки избранного */
+  .fav{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;
+    display:flex;gap:16px;align-items:flex-start}
+  .fav-main{flex:1;min-width:0}
+  .fav .eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint);margin:0 0 3px}
+  .fav .name{font-size:15.5px;font-weight:600;margin:0 0 7px;line-height:1.35}
+  .fav .prod{font-size:13px;color:var(--muted);margin:0 0 11px}
+  .fav .prod .bm{color:var(--ink);font-weight:600}
+  .nums{display:flex;gap:22px;flex-wrap:wrap}
+  .num{display:flex;flex-direction:column;gap:2px}
+  .num .nk{font-size:11.5px;color:var(--faint)}
+  .num .nv{font-family:var(--mono);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+  .num .nv.earn{color:var(--ok)} .num .nv.earn.neg{color:var(--bad)}
+  .num .calc{font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+  .fav-side{display:flex;flex-direction:column;align-items:flex-end;gap:9px;flex:0 0 auto}
+  .rm{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:9px;
+    padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .rm:hover{border-color:var(--bad);color:var(--bad)}
+  .rm svg{width:13px;height:13px}
+
+  .dl-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:7px;white-space:nowrap}
+  .dl-urgent{background:var(--bad-bg);color:var(--bad)}
+  .dl-soon{background:var(--warn-bg);color:var(--warn)}
+  .dl-ok{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+  .dl-closed{background:var(--surface-2);color:var(--faint);text-decoration:line-through}
+
+  .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:40px 26px;text-align:center}
+  .note h2{font-size:19px;margin:0 0 7px;font-weight:650}
+  .note p{color:var(--muted);margin:0 auto 18px;max-width:420px;font-size:14.5px}
+  .btn{display:inline-block;background:linear-gradient(135deg,var(--accent),#10b981);color:#fff;font-weight:600;
+    font-size:14.5px;padding:11px 20px;border-radius:11px}
+  .btn:hover{filter:brightness(1.06)}
+  .loading{text-align:center;color:var(--faint);padding:50px}
+  @media(max-width:560px){
+    .summary{gap:16px} .sum-count{margin-left:0} .sum-divider{display:none}
+    .fav{flex-direction:column} .fav-side{flex-direction:row;width:100%;justify-content:space-between}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a href="/" class="brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      TenderFinder
+    </a>
+    <div class="topnav">
+      <a href="/" class="back">← Витрина</a>
+      <span class="who" id="who"></span>
+    </div>
+  </div>
+
+  <h1>★ Избранное</h1>
+  <p class="sub">Корзина сделок: сколько денег уходит на закуп и сколько чистой маржи заработаешь — по каждому тендеру и суммарно.</p>
+
+  <div id="root"><div class="loading">Загрузка…</div></div>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem("tf_token");
+const $ = s => document.querySelector(s);
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function money(n){ return Math.round(n||0).toLocaleString("ru-RU") + " ₸"; }
+function unitOf(u){ return u ? esc(u) : "шт"; }
+
+function plural(n, one, few, many){
+  const m10 = n % 10, m100 = n % 100;
+  if(m10===1 && m100!==11) return one;
+  if(m10>=2 && m10<=4 && (m100<10 || m100>=20)) return few;
+  return many;
+}
+function deadlineChip(iso){
+  if(!iso) return "";
+  const dl = new Date(iso);
+  if(isNaN(dl.getTime())) return "";
+  const days = Math.ceil((dl - new Date())/86400000);
+  if(days < 0)   return `<span class="dl-chip dl-closed">приём завершён</span>`;
+  if(days === 0) return `<span class="dl-chip dl-urgent">⏰ сегодня</span>`;
+  if(days <= 3)  return `<span class="dl-chip dl-urgent">⏰ ${days} ${plural(days,"день","дня","дней")}</span>`;
+  if(days <= 7)  return `<span class="dl-chip dl-soon">${days} ${plural(days,"день","дня","дней")}</span>`;
+  return `<span class="dl-chip dl-ok">до ${dl.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}</span>`;
+}
+
+const RM_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
+
+function note(title, text, btnHref, btnText){
+  return `<div class="note"><h2>${title}</h2><p>${text}</p>${btnHref?`<a class="btn" href="${btnHref}">${btnText}</a>`:""}</div>`;
+}
+
+function favCard(it){
+  const bm = [it.found_brand, it.found_model].filter(Boolean).join(" ");
+  const prod = it.found_product || bm || "—";
+  const prodLine = `<p class="prod">${bm?`<span class="bm">${esc(bm)}</span> — `:""}${esc(prod)}</p>`;
+
+  // закуп = цена × количество
+  let spendBlock;
+  if(it.purchase_price!=null && it.quantity){
+    spendBlock = `<div class="num"><span class="nk">Уходит на закуп</span>`+
+      `<span class="nv">${money(it.spend)}</span>`+
+      `<span class="calc">${money(it.purchase_price)} × ${it.quantity} ${unitOf(it.unit)}</span></div>`;
+  }else{
+    spendBlock = `<div class="num"><span class="nk">Уходит на закуп</span><span class="nv" style="color:var(--faint)">цена не найдена</span></div>`;
+  }
+  // чистая маржа = margin_total
+  let earnBlock;
+  if(it.earn!=null){
+    const neg = it.earn < 0 ? " neg" : "";
+    earnBlock = `<div class="num"><span class="nk">Заработок (маржа)</span><span class="nv earn${neg}">${money(it.earn)}</span>`+
+      (it.margin_pct!=null?`<span class="calc">${Math.round(it.margin_pct)}%</span>`:"")+`</div>`;
+  }else{
+    earnBlock = `<div class="num"><span class="nk">Заработок (маржа)</span><span class="nv" style="color:var(--faint)">—</span></div>`;
+  }
+
+  return `<div class="fav" data-id="${it.row_id}">
+    <div class="fav-main">
+      <p class="eyebrow">тендер</p>
+      <p class="name">${esc(it.name||"—")}</p>
+      ${prodLine}
+      <div class="nums">${spendBlock}${earnBlock}</div>
+    </div>
+    <div class="fav-side">
+      ${deadlineChip(it.deadline)}
+      <button class="rm" data-rm="${it.row_id}">${RM_SVG} Убрать</button>
+    </div>
+  </div>`;
+}
+
+function render(data){
+  const root = $("#root");
+  const items = data.items || [];
+  const t = data.totals || {count:0, spend:0, earn:0, with_numbers:0};
+  if(!items.length){
+    root.innerHTML = note("В избранном пока пусто",
+      "Открой витрину и нажми звёздочку ★ на интересных тендерах — они появятся здесь, и я сразу посчитаю закуп и маржу.",
+      "/", "Перейти к витрине");
+    return;
+  }
+  const noteTxt = t.with_numbers < t.count
+    ? `<div class="sum-note">Итог посчитан по ${t.with_numbers} из ${t.count} тендеров — у остальных цена поставщика пока не найдена.</div>`
+    : "";
+  const summary = `<div class="summary">
+    <div class="sum-block"><span class="k">Всего уходит на закуп</span><span class="v spend">${money(t.spend)}</span></div>
+    <div class="sum-divider"></div>
+    <div class="sum-block"><span class="k">Всего заработаешь (чистая маржа)</span><span class="v earn">${money(t.earn)}</span></div>
+    <div class="sum-count"><div class="n">${t.count}</div><div class="l">${plural(t.count,"тендер","тендера","тендеров")} в избранном</div></div>
+    ${noteTxt}
+  </div>`;
+  root.innerHTML = summary + items.map(favCard).join("");
+}
+
+async function loadFavs(){
+  const root = $("#root");
+  if(!TOKEN){
+    root.innerHTML = note("Войдите в аккаунт", "Избранное привязано к вашему аккаунту и доступно с любого устройства.", "/login", "Войти");
+    return;
+  }
+  root.innerHTML = `<div class="loading">Загрузка…</div>`;
+  try{
+    const r = await fetch("/api/favorites", {headers:{"X-Auth-Token": TOKEN}});
+    if(r.status === 401){ root.innerHTML = note("Войдите в аккаунт", "Сессия истекла — войдите снова.", "/login", "Войти"); return; }
+    if(r.status === 403){ root.innerHTML = note("Избранное — функция подписки", "Добавление тендеров в избранное и подсчёт прибыли доступны на платных тарифах.", "/pricing", "Открыть доступ"); return; }
+    if(!r.ok){ root.innerHTML = `<div class="note"><h2>Ошибка ${r.status}</h2><p>Не удалось загрузить избранное. Обновите страницу.</p></div>`; return; }
+    render(await r.json());
+  }catch(e){
+    root.innerHTML = `<div class="note"><h2>Ошибка</h2><p>Не удалось загрузить избранное.</p></div>`;
+  }
+}
+
+// удаление из избранного
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-rm]");
+  if(!btn) return;
+  const id = btn.dataset.rm;
+  btn.disabled = true;
+  try{
+    const r = await fetch("/api/favorites/" + id, {method:"DELETE", headers:{"X-Auth-Token": TOKEN}});
+    if(r.ok){ loadFavs(); }   // перезагружаем — пересчитываем итоги
+    else btn.disabled = false;
+  }catch(e){ btn.disabled = false; }
+});
+
+// показать email вошедшего
+(async function(){
+  if(!TOKEN) return;
+  try{
+    const r = await fetch("/api/auth/me", {headers:{"X-Auth-Token": TOKEN}});
+    if(r.ok){ const d = await r.json(); $("#who").textContent = d.email; }
+  }catch(e){}
+})();
+
+loadFavs();
+</script>
+</body>
+</html>

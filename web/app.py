@@ -187,6 +187,12 @@ async def _init_auth(pool) -> None:
                 priced       INTEGER DEFAULT 0,
                 avg_margin   NUMERIC
             );
+            CREATE TABLE IF NOT EXISTS favorites (
+                user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                lot_id     BIGINT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (user_id, lot_id)
+            );
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
         if OWNER_EMAIL and ADMIN_PASSWORD:
@@ -1097,6 +1103,83 @@ async def admin_trends(range: int = Query(90, ge=0, le=1825), _: None = Depends(
             "avg_margin": float(r["avg_margin"]) if r["avg_margin"] is not None else None,
         } for r in snaps],
     }
+
+
+# ─────────── Избранное / корзина сделок (Фаза 4.3) ───────────
+
+@app.get("/api/favorites/ids")
+async def favorite_ids(user=Depends(require_user)):
+    """Лёгкий список row_id избранного — чтобы витрина подсветила звёзды."""
+    async with app.state.pool.acquire() as con:
+        rows = await con.fetch("SELECT lot_id FROM favorites WHERE user_id=$1", user["id"])
+    return {"ids": [r["lot_id"] for r in rows]}
+
+
+@app.post("/api/favorites/{row_id}")
+async def add_favorite(row_id: int, user=Depends(require_user)):
+    entitled, _ = _entitlement(user)
+    if not entitled:
+        raise HTTPException(status_code=403, detail="Избранное доступно по подписке")
+    async with app.state.pool.acquire() as con:
+        if not await con.fetchval("SELECT 1 FROM lots WHERE row_id=$1", row_id):
+            raise HTTPException(status_code=404, detail="Лот не найден")
+        await con.execute(
+            "INSERT INTO favorites (user_id, lot_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+            user["id"], row_id)
+    return {"ok": True, "favorited": True}
+
+
+@app.delete("/api/favorites/{row_id}")
+async def remove_favorite(row_id: int, user=Depends(require_user)):
+    async with app.state.pool.acquire() as con:
+        await con.execute("DELETE FROM favorites WHERE user_id=$1 AND lot_id=$2", user["id"], row_id)
+    return {"ok": True, "favorited": False}
+
+
+@app.get("/api/favorites")
+async def list_favorites(user=Depends(require_user)):
+    """Избранные тендеры с закупом и маржой по каждому + ОБЩИЙ ИТОГ по всем."""
+    entitled, _ = _entitlement(user)
+    if not entitled:
+        raise HTTPException(status_code=403, detail="Избранное доступно по подписке")
+    async with app.state.pool.acquire() as con:
+        rows = await con.fetch("""
+            SELECT l.row_id, l.name, l.found_product, l.found_brand, l.found_model,
+                   l.purchase_price, l.quantity, l.unit, l.margin, l.margin_pct,
+                   l.margin_total, l.lot_price, t.deadline, f.created_at
+            FROM favorites f
+            JOIN lots l ON l.row_id = f.lot_id
+            LEFT JOIN tenders t ON t.id = l.row_id
+            WHERE f.user_id = $1
+            ORDER BY f.created_at DESC
+        """, user["id"])
+
+    items, spend_total, earn_total, with_nums = [], 0.0, 0.0, 0
+    for r in rows:
+        d = dict(r)
+        pp, qty = r["purchase_price"], r["quantity"]
+        spend = float(pp) * qty if (pp is not None and qty) else None
+        earn = float(r["margin_total"]) if r["margin_total"] is not None else None
+        if spend is not None and earn is not None:
+            spend_total += spend
+            earn_total += earn
+            with_nums += 1
+        d["spend"] = spend
+        d["earn"] = earn
+        items.append(d)
+
+    return {
+        "items": items,
+        "totals": {
+            "count": len(items), "with_numbers": with_nums,
+            "spend": round(spend_total), "earn": round(earn_total),
+        },
+    }
+
+
+@app.get("/favorites")
+async def favorites_page():
+    return FileResponse(str(STATIC_DIR / "favorites.html"))
 
 
 @app.get("/pricing")

@@ -168,6 +168,14 @@
   .dl-soon{background:var(--warn-bg);color:var(--warn)}
   .dl-ok{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
   .dl-closed{background:var(--surface-2);color:var(--faint);text-decoration:line-through}
+  /* Избранное (4.3) */
+  .fav-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--faint);cursor:pointer;transition:.15s}
+  .fav-btn svg{width:17px;height:17px}
+  .fav-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .fav-btn.on{color:#e0a516;border-color:rgba(224,165,22,.5);background:rgba(224,165,22,.12)}
+  .fav-btn:disabled{opacity:.5;cursor:default}
+  .fav-link{color:var(--accent)!important;font-weight:600}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -421,6 +429,7 @@ function card(it){
           <h2 class="name">${esc(it.name||"—")}</h2>
         </div>
         <div class="top-right">
+          ${ACCESS.entitled ? `<button class="fav-btn${FAVS.has(it.row_id)?' on':''}" data-fav="${it.row_id}" title="${FAVS.has(it.row_id)?'В избранном':'В избранное'}" aria-label="В избранное">${FAVS.has(it.row_id)?STAR_FILL:STAR_LINE}</button>` : ""}
           <span class="badge ${st.cls}">${esc(st.label)}</span>
           ${deadlineChip(it)}
         </div>
@@ -442,9 +451,21 @@ function card(it){
 
 const AUTH_TOKEN = localStorage.getItem("tf_token");
 let ACCESS = {entitled:true, trial:false};
+let FAVS = new Set(), favsLoaded = false;
+const STAR_LINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17.3 6.2 20.5l1.1-6.5L2.6 9.4l6.5-.9L12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5z"/></svg>';
+const STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M12 17.3 6.2 20.5l1.1-6.5L2.6 9.4l6.5-.9L12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5z"/></svg>';
+async function ensureFavs(){
+  if(favsLoaded || !AUTH_TOKEN){ favsLoaded = true; return; }
+  try{
+    const r = await fetch("/api/favorites/ids", {headers:{"X-Auth-Token": AUTH_TOKEN}});
+    if(r.ok){ FAVS = new Set((await r.json()).ids || []); }
+  }catch(e){}
+  favsLoaded = true;
+}
 let reqId = 0;
 async function load(){
   const mine = ++reqId;
+  await ensureFavs();
   $("#list").innerHTML = `<div class="state">Загрузка…</div>`;
   const p = new URLSearchParams();
   if(state.q) p.set("q", state.q);
@@ -517,6 +538,27 @@ $("#smartReset").addEventListener("click", () => {
   state.maxSpend = ""; state.minMargin = ""; state.offset = 0;
   updateSmartUI(); load();
 });
+
+// ── избранное: клик по звезде (Фаза 4.3) ──
+$("#list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-fav]");
+  if(!btn) return;
+  const id = parseInt(btn.dataset.fav, 10);
+  const on = FAVS.has(id);
+  btn.disabled = true;
+  try{
+    const r = await fetch("/api/favorites/" + id, {
+      method: on ? "DELETE" : "POST",
+      headers: {"X-Auth-Token": AUTH_TOKEN},
+    });
+    if(r.ok){
+      if(on){ FAVS.delete(id); btn.classList.remove("on"); btn.innerHTML = STAR_LINE; btn.title = "В избранное"; }
+      else  { FAVS.add(id);    btn.classList.add("on");    btn.innerHTML = STAR_FILL; btn.title = "В избранном"; }
+    } else if(r.status === 403){ location.href = "/pricing"; }
+    else if(r.status === 401){ location.href = "/login"; }
+  }catch(err){}
+  btn.disabled = false;
+});
 $("#prev").addEventListener("click", () => { state.offset = Math.max(0, state.offset - state.limit); load(); window.scrollTo(0,0); });
 $("#next").addEventListener("click", () => { state.offset += state.limit; load(); window.scrollTo(0,0); });
 
@@ -535,6 +577,7 @@ load();
       if(r.ok){
         const d = await r.json();
         bar.innerHTML = '<span class="who">'+esc(d.email)+'</span>'
+          + '<a href="/favorites" class="fav-link">★ Избранное</a>'
           + (d.role==="owner" ? '<a href="/admin">Панель</a>' : '')
           + '<button id="tfLogout">Выйти</button>';
         document.getElementById("tfLogout").onclick = async function(){
