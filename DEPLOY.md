@@ -99,13 +99,34 @@ git reset --hard HEAD && git pull
 
 ### Изменились только переменные окружения (`.env`)
 
-`sync.sh` не нужен (он не трогает `.env`). Достаточно пересоздать контейнер:
+**Меняется значение существующей переменной** (например, новый `ADMIN_PASSWORD`): `sync.sh` не нужен — достаточно отредактировать `.env` и пересоздать контейнер, чтобы он перечитал файл:
 
 ```bash
 cd /opt/tenderview
-# отредактировать .env при необходимости
+nano .env
 docker compose up -d --force-recreate app
 ```
+
+**Добавляется НОВАЯ переменная** (например `CERT_API_URL`): переменной мало просто быть в `.env` — её ещё нужно **пробросить внутрь контейнера** через `deploy/docker-compose.override.yml`. Там перечислены все доп-переменные сервиса `app`:
+
+```yaml
+services:
+  app:
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
+      CERT_API_URL: ${CERT_API_URL:-}
+      CERT_API_KEY: ${CERT_API_KEY:-}
+```
+
+Порядок для новой переменной:
+1. Добавить строку проброса в `deploy/docker-compose.override.yml` (в репозитории), закоммитить, запушить.
+2. На сервере дописать значение в `/opt/tenderview/.env`.
+3. Выкатить: `git reset --hard HEAD && git pull && bash deploy/sync.sh` (пересоберёт `app` и подхватит и проброс, и значение).
+4. Проверить, что переменная дошла внутрь: `docker exec tenderview-app-1 printenv CERT_API_URL` → должна вернуть значение, а не пусто.
+
+> Симптом «переменная есть в `.env`, а `printenv` внутри контейнера пуст» = забыт проброс в `docker-compose.override.yml`.
 
 ### Изменилась только статика (HTML/JS)
 
@@ -208,6 +229,8 @@ crontab /tmp/cron.bak
 | Ошибка миграции при старте | Лог `app` покажет проблемный SQL; том БД цел, чинится правкой кода и повторным `sync.sh` |
 | Новая страница даёт 404 | Проверь, что есть и роут в `app.py`, и файл в `web/static/`; затем `sync.sh` |
 | Изменения в `src/` не применились | Они применяются по cron из репозитория — убедись, что `git pull` прошёл; `sync.sh` для них не нужен |
+| `printenv` внутри контейнера пуст, хотя в `.env` есть | Новая переменная не проброшена — добавь её в `deploy/docker-compose.override.yml`, затем `sync.sh` |
+| Сертификаты пишут «скоро появится» | `CERT_API_URL` пуст или не проброшен; проверь `docker exec tenderview-app-1 printenv CERT_API_URL` |
 
 ---
 
