@@ -13,6 +13,9 @@ import time
 import hashlib
 import secrets
 import hmac
+import asyncio
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
@@ -28,6 +31,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")  # пароль админ-панели (из .env)
 OWNER_EMAIL = os.getenv("OWNER_EMAIL", "").strip().lower()  # email владельца для автозавода аккаунта
 SESSION_DAYS = int(os.getenv("SESSION_DAYS", "30"))  # срок жизни сессии входа, дней
+CERT_API_URL = os.getenv("CERT_API_URL", "").rstrip("/")  # реестр сертификатов соответствия (внешний API)
+CERT_API_KEY = os.getenv("CERT_API_KEY", "")              # ключ, если требуется (иначе пусто)
 
 # ─────────── Тарифы и продающая модель (Фаза 2.3) — единый источник правды ───────────
 # Стратегия: продаём не «доступ к тендерам», а ГОТОВУЮ ПРИБЫЛЬ — тендер сразу с ценой
@@ -637,6 +642,56 @@ async def insights(response: Response, user=Depends(current_user)):
         "seasonality": seasonality,
         "season_total": sum(months.values()),
     }
+
+
+def _cert_fetch(q: str, size: int = 10):
+    """Синхронный запрос в реестр сертификатов (вызывается в потоке). None — не настроено/ошибка URL."""
+    if not CERT_API_URL:
+        return None
+    params = urllib.parse.urlencode({"product_search": q, "size": size, "page": 1, "document_status": 6})
+    url = f"{CERT_API_URL}/documents?{params}"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    if CERT_API_KEY:
+        req.add_header("Authorization", f"Bearer {CERT_API_KEY}")
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@app.get("/api/certificates")
+async def certificates(q: str, response: Response):
+    """Сертификаты/декларации соответствия по наименованию товара (внешний реестр ЕАЭС)."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"configured": bool(CERT_API_URL), "items": [], "total": 0}
+    if not CERT_API_URL:
+        return {"configured": False, "items": [], "total": 0}
+    try:
+        data = await asyncio.to_thread(_cert_fetch, q, 10)
+    except Exception:
+        return {"configured": True, "error": True, "items": [], "total": 0}
+    if not data:
+        return {"configured": True, "items": [], "total": 0}
+
+    items = []
+    for it in (data.get("items") or []):
+        reg_list = []
+        for r in (it.get("technical_reglaments") or []):
+            if isinstance(r, str):
+                reg_list.append(r)
+            elif isinstance(r, dict):
+                reg_list.append(r.get("short_code") or r.get("name") or "")
+        items.append({
+            "reg_number": it.get("reg_number"),
+            "date": it.get("date_beginning"),
+            "status": (it.get("document_status") or {}).get("name"),
+            "applicant": (it.get("applicant_subject_type") or {}).get("name"),
+            "pack": (it.get("type_of_product_pack") or {}).get("name"),
+            "reglaments": [x for x in reg_list if x],
+            "tn_veds": it.get("tn_veds"),
+            "source_index": it.get("source_index"),
+        })
+    _cache(response, max_age=3600, s_maxage=86400)   # сертификаты меняются редко
+    return {"configured": True, "items": items, "total": data.get("total", len(items))}
 
 
 @app.get("/api/stats")

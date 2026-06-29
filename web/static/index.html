@@ -230,6 +230,23 @@
   .sup-main{flex:0 0 auto;font-size:10.5px;font-weight:700;color:var(--ok);background:var(--ok-bg);border-radius:5px;padding:2px 7px}
   .sup-go{flex:0 0 auto;color:var(--faint);font-size:14px}
   .sup-row:hover .sup-go{color:var(--accent)}
+  /* Сертификаты соответствия */
+  details.cert{margin:10px 0 0}
+  details.cert>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
+  details.cert>summary::-webkit-details-marker{display:none}
+  details.cert>summary::before{content:"› ";color:var(--faint)}
+  details.cert[open]>summary::before{content:"⌄ "}
+  .cert-body{margin-top:8px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .cert-empty{font-size:12.5px;color:var(--muted)}
+  .cert-row{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);margin-bottom:7px}
+  .cert-row:last-child{margin-bottom:0}
+  .cert-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .cert-num{font-family:var(--mono);font-size:12.5px;font-weight:650;color:var(--ink)}
+  .cert-st{font-size:10.5px;font-weight:700;color:var(--muted);background:var(--neutral-bg);border-radius:5px;padding:2px 7px}
+  .cert-st.ok{color:var(--ok);background:var(--ok-bg)}
+  .cert-meta{font-size:11.5px;color:var(--muted);margin-top:5px}
+  .cert-reg{font-size:11.5px;color:var(--accent-ink);margin-top:4px}
+  .cert-more{font-size:11.5px;color:var(--faint);padding:6px 2px 0}
   /* Уведомления о сроках (4.4) */
   .fav-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;
     margin-left:4px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;vertical-align:middle}
@@ -678,6 +695,31 @@ function suppliersPanel(it){
   </details>`;
 }
 
+function certRows(items, total){
+  const rows = items.map(c => {
+    const ok = (c.status||"").toLowerCase().includes("действ");
+    const stChip = c.status ? `<span class="cert-st${ok?" ok":""}">${esc(c.status)}</span>` : "";
+    const regs = (c.reglaments||[]).length ? `<div class="cert-reg">Тех. регламент: ${(c.reglaments||[]).map(esc).join(", ")}</div>` : "";
+    const meta = [c.applicant, c.pack, c.date].filter(Boolean).map(esc).join(" · ");
+    return `<div class="cert-row">
+      <div class="cert-top"><span class="cert-num">${esc(c.reg_number||"—")}</span>${stChip}</div>
+      ${meta?`<div class="cert-meta">${meta}</div>`:""}
+      ${regs}
+    </div>`;
+  }).join("");
+  const more = total > items.length ? `<div class="cert-more">…и ещё ${total - items.length} в реестре</div>` : "";
+  return rows + more;
+}
+
+function certPanel(it){
+  const q = [it.found_brand, it.found_model].filter(Boolean).join(" ").trim();
+  if(!q) return "";
+  return `<details class="cert" data-cq="${esc(q)}">
+    <summary>📜 Сертификаты соответствия</summary>
+    <div class="cert-body"><span class="cert-empty">Нажмите, чтобы проверить реестр…</span></div>
+  </details>`;
+}
+
 function card(it){
   const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
   const conf = it.confidence||0;
@@ -735,6 +777,7 @@ function card(it){
       </div>
       ${details}
       ${suppliersPanel(it)}
+      ${certPanel(it)}
       ${calcPanel(it)}
     </div>
   </article>`;
@@ -920,6 +963,25 @@ document.addEventListener("click", (e) => {
   state.dbrand = ""; state.dmodel = ""; state.offset = 0;
   load(); window.scrollTo(0, 0);
 });
+
+// ── сертификаты соответствия: ленивая загрузка при раскрытии (toggle не всплывает → capture) ──
+document.addEventListener("toggle", (e) => {
+  const d = e.target.closest && e.target.closest("details.cert");
+  if(!d || !d.open || d.dataset.loaded) return;
+  d.dataset.loaded = "1";
+  const body = d.querySelector(".cert-body");
+  body.innerHTML = `<span class="cert-empty">Проверяем реестр…</span>`;
+  fetch("/api/certificates?q=" + encodeURIComponent(d.dataset.cq))
+    .then(r => r.json())
+    .then(data => {
+      if(!data.configured){ body.innerHTML = `<span class="cert-empty">Проверка сертификатов скоро появится.</span>`; return; }
+      if(data.error){ body.innerHTML = `<span class="cert-empty">Реестр временно недоступен — попробуйте позже.</span>`; d.dataset.loaded = ""; return; }
+      const items = data.items || [];
+      if(!items.length){ body.innerHTML = `<span class="cert-empty">Действующих сертификатов по этому товару в реестре не найдено.</span>`; return; }
+      body.innerHTML = certRows(items, data.total);
+    })
+    .catch(() => { body.innerHTML = `<span class="cert-empty">Не удалось проверить реестр.</span>`; d.dataset.loaded = ""; });
+}, true);
 
 // ── профиль заказчика: клик по имени и сброс (Фаза 7.4) ──
 $("#list").addEventListener("click", (e) => {
