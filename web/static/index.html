@@ -219,6 +219,23 @@
   .target-hint.bad{color:var(--bad)}
   .target-hint:empty{display:none}
   @media(max-width:560px){.calc-out{grid-template-columns:1fr}}
+  /* Мои расходы + реальная прибыль (5.2) */
+  .costbar{margin:0 0 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+  .costbar>summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:13.5px;font-weight:600;color:var(--ink);
+    display:flex;align-items:center;gap:9px}
+  .costbar>summary::-webkit-details-marker{display:none}
+  .costbar>summary svg{width:16px;height:16px;color:var(--accent)}
+  .cost-body{padding:0 16px 16px;border-top:1px solid var(--line)}
+  .cost-help{margin:13px 0 14px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .cost-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
+  .cost-grid label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
+  .cost-grid input{font:inherit;font-family:var(--mono);font-size:14px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:9px;background:var(--bg);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .cost-grid input:focus{outline:none;border-color:var(--accent)}
+  .cost-hint{font-size:11px;color:var(--faint)}
+  .oc.hl{background:var(--ok-bg);border-color:transparent}
+  .calc-break{font-size:12px;color:var(--faint);font-family:var(--mono);margin-bottom:11px}
+  .calc-tip{font-size:12px;color:var(--warn);background:var(--warn-bg);border-radius:8px;padding:8px 11px;margin-bottom:11px;line-height:1.45}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -306,6 +323,19 @@
     </div>
     <div class="smarthint" id="smartHint"></div>
   </div>
+
+  <details class="costbar" id="costbar">
+    <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Мои расходы — для расчёта прибыли в кармане</summary>
+    <div class="cost-body">
+      <p class="cost-help">Заполни один раз — калькулятор ставки будет вычитать это из каждого тендера и показывать реальную прибыль, а не просто разницу цен.</p>
+      <div class="cost-grid">
+        <label>Налог, % с оборота<input id="c-tax" type="number" min="0" max="100" step="0.5"><span class="cost-hint">ИП упрощёнка ≈ 3%</span></label>
+        <label>Комиссия площадки, %<input id="c-commission" type="number" min="0" max="100" step="0.5"><span class="cost-hint">если закупаешь через маркетплейс</span></label>
+        <label>Доставка, % с оборота<input id="c-delivery" type="number" min="0" max="100" step="0.5"><span class="cost-hint">логистика до заказчика</span></label>
+        <label>Обеспечение заявки, %<input id="c-security" type="number" min="0" max="10" step="0.5"><span class="cost-hint">в госзакупе обычно 1%</span></label>
+      </div>
+    </div>
+  </details>
 
   <div id="alert"></div>
   <div id="gate"></div>
@@ -410,6 +440,7 @@ function setSmartLock(){
   if(ms) ms.disabled = locked;
   if(mm) mm.disabled = locked;
   if(lk) lk.hidden = !locked;
+  const cb = document.getElementById("costbar"); if(cb) cb.style.display = locked ? "none" : "";
 }
 function updateSmartUI(){
   const any = state.maxSpend || state.minMargin;
@@ -438,17 +469,22 @@ function deadlineChip(it){
   return `<span class="dl-chip dl-ok">до ${dl.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}</span>`;
 }
 
+function deductPct(){ return (COSTS.tax||0) + (COSTS.commission||0) + (COSTS.delivery||0); }
+
 function calcPanel(it){
   if(!ACCESS.entitled) return "";
   const cost = it.purchase_price, ceil = it.lot_price, qty = it.quantity||1;
   if(cost==null || ceil==null || ceil<=cost) return "";   // нужен положительный запас
-  const pu0 = ceil-cost, total0 = pu0*qty, marg0 = ceil>0 ? Math.round(pu0/ceil*100) : 0;
   const step = Math.max(1, Math.round((ceil-cost)/500));
   const u = unitOf(it.unit);
+  const d = deductPct()/100;
+  const revenue0 = ceil*qty, deduct0 = revenue0*d, net0 = (ceil-cost)*qty - deduct0;
+  const netMarg0 = revenue0>0 ? Math.round(net0/revenue0*100) : 0;
+  const secure0 = revenue0 * (COSTS.security||0)/100;
   return `<details class="calc">
-    <summary>🧮 Калькулятор ставки</summary>
+    <summary>🧮 Калькулятор ставки и прибыли</summary>
     <div class="calc-body" data-cost="${cost}" data-ceil="${ceil}" data-qty="${qty}" data-unit="${esc(u)}">
-      <p class="calc-help">Стартовая цена тендера — <b>${money(ceil)}</b> за ${u}, ваш закуп — <b>${money(cost)}</b>. Опускайте ставку, чтобы обойти конкурентов, и следите, чтобы прибыль осталась нужной.</p>
+      <p class="calc-help">Старт тендера — <b>${money(ceil)}</b> за ${u}, ваш закуп — <b>${money(cost)}</b>. Опускайте ставку, чтобы обойти конкурентов; ниже — реальная прибыль за вычетом ваших расходов.</p>
       <div class="bid-head">
         <span>Ваша ставка за ${u}</span>
         <input class="bid-num" type="number" min="${Math.round(cost)}" max="${Math.round(ceil)}" step="${step}" value="${Math.round(ceil)}">
@@ -456,11 +492,13 @@ function calcPanel(it){
       <input class="bid-slider" type="range" min="${cost}" max="${ceil}" step="${step}" value="${ceil}">
       <div class="calc-scale"><span>закуп ${money(cost)}</span><span>старт ${money(ceil)}</span></div>
       <div class="calc-out">
-        <div class="oc"><span class="ok2">Чистая прибыль</span><b class="o-val o-total pos">${money(total0)}</b></div>
-        <div class="oc"><span class="ok2">С единицы × кол-во</span><b class="o-val o-unit">${money(pu0)} × ${qty}</b></div>
-        <div class="oc"><span class="ok2">Маржа</span><b class="o-val o-marg">${marg0}%</b></div>
+        <div class="oc hl"><span class="ok2">Прибыль в кармане</span><b class="o-val o-total ${net0>0?'pos':'neg'}">${money(net0)}</b></div>
+        <div class="oc"><span class="ok2">Чистая маржа</span><b class="o-val o-marg">${netMarg0}%</b></div>
         <div class="oc"><span class="ok2">Ниже старта</span><b class="o-val o-under">по старту</b></div>
+        <div class="oc"><span class="ok2">Заморозить (обеспечение)</span><b class="o-val o-secure">${money(secure0)}</b></div>
       </div>
+      <div class="calc-break o-break">Выручка ${money(revenue0)} − закуп ${money(cost*qty)} − расходы ${money(deduct0)}</div>
+      ${deductPct()===0 ? `<div class="calc-tip">Расходы не заданы — укажи налог/комиссию/доставку в «⚙ Мои расходы» вверху, чтобы видеть прибыль в кармане.</div>` : ``}
       <div class="calc-target">
         <label>Хочу заработать чисто, ₸ <input class="bid-target" type="number" min="0" step="10000" placeholder="напр. 100 000"></label>
         <div class="target-hint"></div>
@@ -474,26 +512,34 @@ function recalcBid(body, bid){
   bid = Math.min(ceil, Math.max(cost, bid));
   body.querySelector(".bid-slider").value = bid;
   body.querySelector(".bid-num").value = Math.round(bid);
-  const pu = bid-cost, total = pu*qty, marg = bid>0 ? Math.round(pu/bid*100) : 0;
+  const d = deductPct()/100;
+  const revenue = bid*qty, costGoods = cost*qty, deduct = revenue*d;
+  const net = revenue - costGoods - deduct;
+  const netMarg = revenue>0 ? Math.round(net/revenue*100) : 0;
   const under = ceil-bid, underp = ceil>0 ? Math.round(under/ceil*100) : 0;
+  const secure = ceil*qty*(COSTS.security||0)/100;   // обеспечение — от стартовой суммы тендера
   const tot = body.querySelector(".o-total");
-  tot.textContent = money(total); tot.className = "o-val o-total " + (total>0?"pos":"neg");
-  body.querySelector(".o-unit").textContent = money(pu) + " × " + qty;
-  body.querySelector(".o-marg").textContent = marg + "%";
+  tot.textContent = money(net); tot.className = "o-val o-total " + (net>0?"pos":"neg");
+  body.querySelector(".o-marg").textContent = netMarg + "%";
   body.querySelector(".o-under").textContent = under>0 ? ("−"+money(under)+" · "+underp+"%") : "по старту";
+  body.querySelector(".o-secure").textContent = money(secure);
+  body.querySelector(".o-break").innerHTML = "Выручка " + money(revenue) + " − закуп " + money(costGoods) + " − расходы " + money(deduct);
 }
 function applyTarget(body){
   const cost=+body.dataset.cost, ceil=+body.dataset.ceil, qty=+body.dataset.qty||1, u=body.dataset.unit||"ед.";
   const hint = body.querySelector(".target-hint");
   const t = parseFloat(body.querySelector(".bid-target").value);
   if(isNaN(t)){ hint.textContent=""; hint.className="target-hint"; return; }
-  const bid = cost + t/qty;
+  const d = deductPct()/100;
+  if(d >= 1){ hint.textContent = "Расходы ≥ 100% оборота — прибыль невозможна."; hint.className = "target-hint bad"; return; }
+  const bid = (t + cost*qty) / (qty*(1-d));     // ставка, дающая чистыми ровно t (с учётом расходов)
   if(bid > ceil){
-    hint.textContent = "Недостижимо: даже по стартовой цене максимум " + money((ceil-cost)*qty);
+    const maxNet = (ceil-cost)*qty - ceil*qty*d;
+    hint.textContent = "Недостижимо: максимум чистыми по стартовой цене " + money(maxNet);
     hint.className = "target-hint bad";
     recalcBid(body, ceil);
   }else{
-    hint.textContent = "Ставьте " + money(bid) + " за " + u + " — это на " + money(ceil-bid) + " ниже старта, прибыль сохранится";
+    hint.textContent = "Ставьте " + money(bid) + " за " + u + " — на " + money(ceil-bid) + " ниже старта, чистыми останется " + money(t);
     hint.className = "target-hint ok";
     recalcBid(body, bid);
   }
@@ -558,6 +604,28 @@ function card(it){
 const AUTH_TOKEN = localStorage.getItem("tf_token");
 let ACCESS = {entitled:true, trial:false};
 let FAVS = new Set(), favsLoaded = false;
+// ── мои расходы для реальной прибыли (Фаза 5.2) ──
+function loadCosts(){
+  try{ return Object.assign({tax:0,commission:0,delivery:0,security:1}, JSON.parse(localStorage.getItem("tf_costs")||"{}")); }
+  catch(e){ return {tax:0,commission:0,delivery:0,security:1}; }
+}
+let COSTS = loadCosts();
+function saveCosts(){
+  try{ localStorage.setItem("tf_costs", JSON.stringify(COSTS)); }catch(e){}
+  document.querySelectorAll(".calc-body").forEach(b => recalcBid(b));   // обновить открытые калькуляторы
+}
+function initCosts(){
+  const map = {tax:"c-tax", commission:"c-commission", delivery:"c-delivery", security:"c-security"};
+  for(const k in map){
+    const el = document.getElementById(map[k]);
+    if(!el) continue;
+    el.value = COSTS[k] || 0;
+    el.addEventListener("input", () => {
+      COSTS[k] = Math.max(0, parseFloat(el.value) || 0);
+      saveCosts();
+    });
+  }
+}
 const STAR_LINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17.3 6.2 20.5l1.1-6.5L2.6 9.4l6.5-.9L12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5z"/></svg>';
 const STAR_FILL = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"><path d="M12 17.3 6.2 20.5l1.1-6.5L2.6 9.4l6.5-.9L12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5z"/></svg>';
 async function ensureFavs(){
@@ -717,6 +785,7 @@ $("#prev").addEventListener("click", () => { state.offset = Math.max(0, state.of
 $("#next").addEventListener("click", () => { state.offset += state.limit; load(); window.scrollTo(0,0); });
 
 loadStats();
+initCosts();
 load();
 
 // ── строка входа (Фаза 2.1) ──
