@@ -176,6 +176,19 @@
   .fav-btn.on{color:#e0a516;border-color:rgba(224,165,22,.5);background:rgba(224,165,22,.12)}
   .fav-btn:disabled{opacity:.5;cursor:default}
   .fav-link{color:var(--accent)!important;font-weight:600}
+  /* Уведомления о сроках (4.4) */
+  .fav-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;
+    margin-left:4px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;vertical-align:middle}
+  .alert-bar{display:flex;align-items:center;gap:11px;border-radius:var(--radius);padding:12px 15px;margin:0 0 14px}
+  .alert-bar svg{width:19px;height:19px;flex:0 0 auto}
+  .alert-bar.urgent{background:var(--bad-bg);border:1px solid var(--bad);color:var(--bad)}
+  .alert-bar.soon{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn)}
+  .alert-tx{flex:1;font-size:13.5px;font-weight:600;color:var(--ink);min-width:0}
+  .alert-cta{font-size:13.5px;font-weight:600;color:var(--accent);text-decoration:none;white-space:nowrap}
+  .alert-cta:hover{color:var(--accent-ink)}
+  .alert-x{background:none;border:none;color:var(--faint);font-size:15px;cursor:pointer;padding:2px 4px;line-height:1;flex:0 0 auto}
+  .alert-x:hover{color:var(--ink)}
+  @media(max-width:560px){.alert-bar{flex-wrap:wrap}.alert-tx{flex-basis:100%}}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -264,6 +277,7 @@
     <div class="smarthint" id="smartHint"></div>
   </div>
 
+  <div id="alert"></div>
   <div id="gate"></div>
   <p class="meta" id="meta"></p>
   <div id="list"></div>
@@ -462,6 +476,46 @@ async function ensureFavs(){
   }catch(e){}
   favsLoaded = true;
 }
+
+// ── уведомления о сроках избранного (Фаза 4.4) ──
+async function loadAlerts(){
+  if(!AUTH_TOKEN) return;
+  let a;
+  try{
+    const r = await fetch("/api/favorites/alerts", {headers:{"X-Auth-Token": AUTH_TOKEN}});
+    if(!r.ok) return;
+    a = await r.json();
+  }catch(e){ return; }
+  const count = (a.urgent||0) + (a.soon||0);
+  const link = document.querySelector(".fav-link");
+  if(link && count > 0) link.innerHTML = '★ Избранное <span class="fav-badge">' + count + '</span>';
+  renderAlert(a);
+}
+function renderAlert(a){
+  const el = document.getElementById("alert");
+  if(!el) return;
+  const urgent = a.urgent||0, soon = a.soon||0;
+  if(urgent + soon === 0){ el.innerHTML = ""; return; }
+  const key = "tf_alert_dismiss_" + new Date().toISOString().slice(0,10);
+  try{ if(sessionStorage.getItem(key)){ el.innerHTML = ""; return; } }catch(e){}
+  let cls, txt;
+  if(urgent > 0){
+    cls = "urgent";
+    txt = "⏰ " + urgent + " " + plural(urgent,"избранный тендер закрывается","избранных тендера закрываются","избранных тендеров закрываются") + " в ближайшие 3 дня";
+  }else{
+    cls = "soon";
+    txt = soon + " " + plural(soon,"избранный тендер закрывается","избранных тендера закрываются","избранных тендеров закрываются") + " на этой неделе";
+  }
+  el.innerHTML = '<div class="alert-bar ' + cls + '">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>'
+    + '<span class="alert-tx">' + txt + '</span>'
+    + '<a class="alert-cta" href="/favorites">Открыть избранное →</a>'
+    + '<button class="alert-x" title="Скрыть" aria-label="Скрыть">✕</button>'
+    + '</div>';
+  const x = el.querySelector(".alert-x");
+  if(x) x.onclick = () => { try{ sessionStorage.setItem(key,"1"); }catch(e){} el.innerHTML = ""; };
+}
+
 let reqId = 0;
 async function load(){
   const mine = ++reqId;
@@ -587,6 +641,7 @@ load();
           localStorage.removeItem("tf_email");
           location.reload();
         };
+        loadAlerts();
         return;
       }
       localStorage.removeItem("tf_token");

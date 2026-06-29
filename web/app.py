@@ -1115,6 +1115,42 @@ async def favorite_ids(user=Depends(require_user)):
     return {"ids": [r["lot_id"] for r in rows]}
 
 
+@app.get("/api/favorites/alerts")
+async def favorite_alerts(user=Depends(require_user)):
+    """Сводка по срокам избранного: сколько закрывается срочно/скоро/уже закрылось."""
+    entitled, _ = _entitlement(user)
+    if not entitled:
+        return {"urgent": 0, "soon": 0, "expired": 0, "soonest": []}
+    async with app.state.pool.acquire() as con:
+        rows = await con.fetch("""
+            SELECT l.row_id, l.name, t.deadline
+            FROM favorites f
+            JOIN lots l ON l.row_id = f.lot_id
+            LEFT JOIN tenders t ON t.id = l.row_id
+            WHERE f.user_id = $1 AND t.deadline IS NOT NULL
+            ORDER BY t.deadline ASC
+        """, user["id"])
+    now = datetime.now(timezone.utc)
+    urgent = soon = expired = 0
+    soonest = []
+    for r in rows:
+        secs = (r["deadline"] - now).total_seconds()
+        if secs <= 0:
+            expired += 1
+            continue
+        days = -(-int(secs) // 86400)          # дней осталось, округление вверх
+        if days <= 3:
+            urgent += 1
+        elif days <= 7:
+            soon += 1
+        if days <= 7 and len(soonest) < 5:
+            soonest.append({
+                "row_id": r["row_id"], "name": r["name"],
+                "deadline": r["deadline"].isoformat(), "days_left": days,
+            })
+    return {"urgent": urgent, "soon": soon, "expired": expired, "soonest": soonest}
+
+
 @app.post("/api/favorites/{row_id}")
 async def add_favorite(row_id: int, user=Depends(require_user)):
     entitled, _ = _entitlement(user)

@@ -87,6 +87,12 @@
   .dl-ok{background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
   .dl-closed{background:var(--surface-2);color:var(--faint);text-decoration:line-through}
 
+  .alert-bar{display:flex;align-items:center;gap:11px;border-radius:var(--radius);padding:12px 15px;margin-bottom:16px}
+  .alert-bar svg{width:19px;height:19px;flex:0 0 auto}
+  .alert-bar.urgent{background:var(--bad-bg);border:1px solid var(--bad);color:var(--bad)}
+  .alert-bar.soon{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn)}
+  .alert-tx{font-size:13.5px;font-weight:600;color:var(--ink)}
+
   .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:40px 26px;text-align:center}
   .note h2{font-size:19px;margin:0 0 7px;font-weight:650}
   .note p{color:var(--muted);margin:0 auto 18px;max-width:420px;font-size:14.5px}
@@ -188,6 +194,31 @@ function favCard(it){
   </div>`;
 }
 
+function daysLeft(iso){
+  if(!iso) return null;
+  const dl = new Date(iso);
+  if(isNaN(dl.getTime())) return null;
+  return Math.ceil((dl - new Date())/86400000);
+}
+function alertStrip(items){
+  let urgent = 0, soon = 0;
+  items.forEach(it => {
+    const d = daysLeft(it.deadline);
+    if(d == null || d < 0) return;
+    if(d <= 3) urgent++; else if(d <= 7) soon++;
+  });
+  if(urgent + soon === 0) return "";
+  let cls, txt;
+  if(urgent > 0){
+    cls = "urgent";
+    txt = "⏰ " + urgent + " " + plural(urgent,"тендер закрывается","тендера закрываются","тендеров закрываются") + " в ближайшие 3 дня — не упусти срок подачи";
+  }else{
+    cls = "soon";
+    txt = soon + " " + plural(soon,"тендер закрывается","тендера закрываются","тендеров закрываются") + " на этой неделе";
+  }
+  return `<div class="alert-bar ${cls}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="alert-tx">${txt}</span></div>`;
+}
+
 function render(data){
   const root = $("#root");
   const items = data.items || [];
@@ -208,7 +239,7 @@ function render(data){
     <div class="sum-count"><div class="n">${t.count}</div><div class="l">${plural(t.count,"тендер","тендера","тендеров")} в избранном</div></div>
     ${noteTxt}
   </div>`;
-  root.innerHTML = summary + items.map(favCard).join("");
+  root.innerHTML = alertStrip(items) + summary + items.map(favCard).join("");
 }
 
 async function loadFavs(){
