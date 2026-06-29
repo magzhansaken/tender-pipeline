@@ -599,6 +599,46 @@ async def regions(response: Response):
     return {"regions": [{"region": r["region"], "count": r["c"]} for r in rows]}
 
 
+@app.get("/api/insights")
+async def insights(response: Response, user=Depends(current_user)):
+    """Аналитика рынка: рейтинг категорий по марже/объёму + сезонность по срокам."""
+    entitled, _ = _entitlement(user)
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        cats = await con.fetch(
+            "SELECT category, count(*) AS lots, "
+            "count(*) FILTER (WHERE margin_pct IS NOT NULL) AS priced, "
+            "round(avg(margin_pct) FILTER (WHERE margin_pct IS NOT NULL)) AS avg_margin, "
+            "COALESCE(sum(margin_total), 0) AS total_margin, "
+            "round(avg(lot_price) FILTER (WHERE lot_price IS NOT NULL)) AS avg_lot "
+            "FROM lots WHERE category IS NOT NULL AND btrim(category) <> '' "
+            "GROUP BY category ORDER BY count(*) DESC"
+        )
+        seas = await con.fetch(
+            "SELECT EXTRACT(MONTH FROM deadline)::int AS m, count(*) AS c "
+            "FROM tenders WHERE deadline IS NOT NULL GROUP BY m ORDER BY m"
+        )
+    cat_list = []
+    for r in cats:
+        cat_list.append({
+            "category": r["category"],
+            "lots": r["lots"],
+            "priced": r["priced"],
+            "avg_lot": float(r["avg_lot"]) if r["avg_lot"] is not None else None,
+            "avg_margin": (int(r["avg_margin"]) if r["avg_margin"] is not None else None) if entitled else None,
+            "total_margin": (float(r["total_margin"]) if r["total_margin"] is not None else None) if entitled else None,
+        })
+    months = {int(r["m"]): r["c"] for r in seas}
+    seasonality = [{"month": m, "count": months.get(m, 0)} for m in range(1, 13)]
+    _cache(response)
+    return {
+        "entitled": entitled,
+        "categories": cat_list,
+        "seasonality": seasonality,
+        "season_total": sum(months.values()),
+    }
+
+
 @app.get("/api/stats")
 async def stats(response: Response):
     pool = app.state.pool
@@ -1468,6 +1508,11 @@ async def cabinet(user=Depends(require_user)):
 @app.get("/cabinet")
 async def cabinet_page():
     return FileResponse(str(STATIC_DIR / "cabinet.html"))
+
+
+@app.get("/analytics")
+async def analytics_page():
+    return FileResponse(str(STATIC_DIR / "analytics.html"))
 
 
 @app.get("/favorites")
