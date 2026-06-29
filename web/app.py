@@ -286,7 +286,7 @@ async def _user_by_token(token: str | None):
 # а не в CSS (иначе данные видно во вкладке «Сеть»). Список тендеров остаётся как тизер.
 TRIAL_DAYS = 14
 FREE_LOT_LIMIT = 12                       # сколько лотов видит негейтнутый посетитель
-GATED_FIELDS = ("purchase_price", "margin", "margin_pct", "margin_total", "source_url")
+GATED_FIELDS = ("purchase_price", "margin", "margin_pct", "margin_total", "source_url", "candidates")
 
 
 def _entitlement(user):
@@ -485,7 +485,7 @@ async def list_lots(
         total = await con.fetchval(
             f"SELECT count(*) FROM lots l LEFT JOIN tenders t ON t.id = l.row_id {where_sql}", *args)
         rows = await con.fetch(
-            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
+            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region, t.match_result->'candidates' AS candidates FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
             f"{where_sql} ORDER BY {order_sql} "
             f"LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
             *args, limit, offset,
@@ -514,7 +514,8 @@ async def get_lot(row_id: int, response: Response, user=Depends(current_user)):
     pool = app.state.pool
     async with pool.acquire() as con:
         row = await con.fetchrow(
-            f"SELECT {COLS_L}, l.brand_in_spec, l.model_in_spec, l.time_sec, t.deadline "
+            f"SELECT {COLS_L}, l.brand_in_spec, l.model_in_spec, l.time_sec, t.deadline, "
+            f"tf_region(l.customer) AS region, t.match_result->'candidates' AS candidates "
             f"FROM lots l LEFT JOIN tenders t ON t.id = l.row_id WHERE l.row_id = $1",
             row_id,
         )

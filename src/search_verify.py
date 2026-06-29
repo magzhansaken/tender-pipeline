@@ -341,6 +341,28 @@ async def main():
                     except Exception:
                         pass
 
+        # альтернативные площадки — «несколько поставщиков на лот» (Фаза 7.2).
+        # Сохраняем топ продуктовых ссылок (страницы-списки пропускаем).
+        if candidates:
+            chosen_url = result.get("source_url")
+            alts = []
+            for c in candidates:
+                url = (c.get("url") or "").strip()
+                if not url:
+                    continue
+                low = url.lower()
+                if any(m in low for m in LISTING_MARKERS):
+                    continue
+                alts.append({
+                    "title": (c.get("title") or "")[:160],
+                    "url": url,
+                    "site": c.get("site") or "",
+                    "is_main": url == chosen_url,
+                })
+                if len(alts) >= 8:
+                    break
+            result["candidates"] = alts
+
         await conn.execute(
             "UPDATE tenders SET match_result=$1::jsonb, match_status=$2, found_url=$3, confidence=$4, stage='searched' WHERE id=$5",
             json.dumps(result, ensure_ascii=False),
