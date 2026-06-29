@@ -189,6 +189,36 @@
   .alert-x{background:none;border:none;color:var(--faint);font-size:15px;cursor:pointer;padding:2px 4px;line-height:1;flex:0 0 auto}
   .alert-x:hover{color:var(--ink)}
   @media(max-width:560px){.alert-bar{flex-wrap:wrap}.alert-tx{flex-basis:100%}}
+  /* Калькулятор ставки (5.1) */
+  details.calc{margin:10px 0 0}
+  details.calc>summary{cursor:pointer;list-style:none;width:fit-content;font-size:13px;font-weight:600;color:var(--accent);padding:5px 0}
+  details.calc>summary::-webkit-details-marker{display:none}
+  details.calc>summary::before{content:"› ";color:var(--faint)}
+  details.calc[open]>summary::before{content:"⌄ "}
+  .calc-body{margin-top:8px;padding:14px 15px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}
+  .calc-help{margin:0 0 13px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .calc-help b{color:var(--ink);font-family:var(--mono)}
+  .bid-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}
+  .bid-head span{font-size:13px;color:var(--muted)}
+  .bid-num{font:inherit;font-family:var(--mono);font-size:15px;font-weight:600;width:140px;text-align:right;
+    padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .bid-num:focus{outline:none;border-color:var(--accent)}
+  .bid-slider{width:100%;accent-color:var(--accent);margin:2px 0 4px;cursor:pointer}
+  .calc-scale{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);font-family:var(--mono);margin-bottom:13px}
+  .calc-out{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:13px}
+  .oc{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:9px 11px;display:flex;flex-direction:column;gap:3px}
+  .oc .ok2{font-size:11px;color:var(--faint)}
+  .o-val{font-family:var(--mono);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .o-total.pos{color:var(--ok)} .o-total.neg{color:var(--bad)}
+  .calc-target label{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .calc-target input{font:inherit;font-family:var(--mono);font-size:14px;width:150px;padding:7px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);appearance:textfield;-moz-appearance:textfield}
+  .calc-target input:focus{outline:none;border-color:var(--accent)}
+  .target-hint{font-size:12.5px;margin-top:8px;line-height:1.45}
+  .target-hint.ok{color:var(--accent-ink)}
+  .target-hint.bad{color:var(--bad)}
+  .target-hint:empty{display:none}
+  @media(max-width:560px){.calc-out{grid-template-columns:1fr}}
   .cand{font-size:12.5px; color:var(--faint); margin-left:auto}
 
   details{margin:12px 0 0}
@@ -408,6 +438,67 @@ function deadlineChip(it){
   return `<span class="dl-chip dl-ok">до ${dl.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}</span>`;
 }
 
+function calcPanel(it){
+  if(!ACCESS.entitled) return "";
+  const cost = it.purchase_price, ceil = it.lot_price, qty = it.quantity||1;
+  if(cost==null || ceil==null || ceil<=cost) return "";   // нужен положительный запас
+  const pu0 = ceil-cost, total0 = pu0*qty, marg0 = ceil>0 ? Math.round(pu0/ceil*100) : 0;
+  const step = Math.max(1, Math.round((ceil-cost)/500));
+  const u = unitOf(it.unit);
+  return `<details class="calc">
+    <summary>🧮 Калькулятор ставки</summary>
+    <div class="calc-body" data-cost="${cost}" data-ceil="${ceil}" data-qty="${qty}" data-unit="${esc(u)}">
+      <p class="calc-help">Стартовая цена тендера — <b>${money(ceil)}</b> за ${u}, ваш закуп — <b>${money(cost)}</b>. Опускайте ставку, чтобы обойти конкурентов, и следите, чтобы прибыль осталась нужной.</p>
+      <div class="bid-head">
+        <span>Ваша ставка за ${u}</span>
+        <input class="bid-num" type="number" min="${Math.round(cost)}" max="${Math.round(ceil)}" step="${step}" value="${Math.round(ceil)}">
+      </div>
+      <input class="bid-slider" type="range" min="${cost}" max="${ceil}" step="${step}" value="${ceil}">
+      <div class="calc-scale"><span>закуп ${money(cost)}</span><span>старт ${money(ceil)}</span></div>
+      <div class="calc-out">
+        <div class="oc"><span class="ok2">Чистая прибыль</span><b class="o-val o-total pos">${money(total0)}</b></div>
+        <div class="oc"><span class="ok2">С единицы × кол-во</span><b class="o-val o-unit">${money(pu0)} × ${qty}</b></div>
+        <div class="oc"><span class="ok2">Маржа</span><b class="o-val o-marg">${marg0}%</b></div>
+        <div class="oc"><span class="ok2">Ниже старта</span><b class="o-val o-under">по старту</b></div>
+      </div>
+      <div class="calc-target">
+        <label>Хочу заработать чисто, ₸ <input class="bid-target" type="number" min="0" step="10000" placeholder="напр. 100 000"></label>
+        <div class="target-hint"></div>
+      </div>
+    </div>
+  </details>`;
+}
+function recalcBid(body, bid){
+  const cost=+body.dataset.cost, ceil=+body.dataset.ceil, qty=+body.dataset.qty||1;
+  if(bid==null || isNaN(bid)) bid = +body.querySelector(".bid-slider").value;
+  bid = Math.min(ceil, Math.max(cost, bid));
+  body.querySelector(".bid-slider").value = bid;
+  body.querySelector(".bid-num").value = Math.round(bid);
+  const pu = bid-cost, total = pu*qty, marg = bid>0 ? Math.round(pu/bid*100) : 0;
+  const under = ceil-bid, underp = ceil>0 ? Math.round(under/ceil*100) : 0;
+  const tot = body.querySelector(".o-total");
+  tot.textContent = money(total); tot.className = "o-val o-total " + (total>0?"pos":"neg");
+  body.querySelector(".o-unit").textContent = money(pu) + " × " + qty;
+  body.querySelector(".o-marg").textContent = marg + "%";
+  body.querySelector(".o-under").textContent = under>0 ? ("−"+money(under)+" · "+underp+"%") : "по старту";
+}
+function applyTarget(body){
+  const cost=+body.dataset.cost, ceil=+body.dataset.ceil, qty=+body.dataset.qty||1, u=body.dataset.unit||"ед.";
+  const hint = body.querySelector(".target-hint");
+  const t = parseFloat(body.querySelector(".bid-target").value);
+  if(isNaN(t)){ hint.textContent=""; hint.className="target-hint"; return; }
+  const bid = cost + t/qty;
+  if(bid > ceil){
+    hint.textContent = "Недостижимо: даже по стартовой цене максимум " + money((ceil-cost)*qty);
+    hint.className = "target-hint bad";
+    recalcBid(body, ceil);
+  }else{
+    hint.textContent = "Ставьте " + money(bid) + " за " + u + " — это на " + money(ceil-bid) + " ниже старта, прибыль сохранится";
+    hint.className = "target-hint ok";
+    recalcBid(body, bid);
+  }
+}
+
 function card(it){
   const st = ST[it.status] || {label:it.status||"—", cls:"neutral"};
   const conf = it.confidence||0;
@@ -459,6 +550,7 @@ function card(it){
         ${cand}
       </div>
       ${details}
+      ${calcPanel(it)}
     </div>
   </article>`;
 }
@@ -593,7 +685,15 @@ $("#smartReset").addEventListener("click", () => {
   updateSmartUI(); load();
 });
 
-// ── избранное: клик по звезде (Фаза 4.3) ──
+// ── калькулятор ставки: слайдер / ставка / целевая прибыль (Фаза 5.1) ──
+$("#list").addEventListener("input", (e) => {
+  const body = e.target.closest(".calc-body");
+  if(!body) return;
+  if(e.target.classList.contains("bid-slider") || e.target.classList.contains("bid-num"))
+    recalcBid(body, +e.target.value);
+  else if(e.target.classList.contains("bid-target"))
+    applyTarget(body);
+});
 $("#list").addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-fav]");
   if(!btn) return;
