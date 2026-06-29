@@ -199,6 +199,32 @@ async def _init_auth(pool) -> None:
             ALTER TABLE favorites ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'interested';
             ALTER TABLE favorites ADD COLUMN IF NOT EXISTS note TEXT DEFAULT '';
             ALTER TABLE favorites ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '[]'::jsonb;
+            CREATE OR REPLACE FUNCTION tf_region(c text) RETURNS text AS $fn$
+              SELECT CASE
+                WHEN c IS NULL OR btrim(c) = '' OR c ILIKE 'Не указан%' THEN 'Не указан'
+                WHEN c ILIKE '%Алматинск%' THEN 'Алматинская обл.'
+                WHEN c ILIKE '%Алмат%' THEN 'Алматы'
+                WHEN c ILIKE '%Астан%' OR c ILIKE '%Нур-Султан%' OR c ILIKE '%Нур-Cултан%' THEN 'Астана'
+                WHEN c ILIKE '%Шымкент%' OR c ILIKE '%Чимкент%' THEN 'Шымкент'
+                WHEN c ILIKE '%Караганд%' THEN 'Карагандинская обл.'
+                WHEN c ILIKE '%Актюбинск%' OR c ILIKE '%Актобе%' OR c ILIKE '%Ақтөбе%' THEN 'Актюбинская обл.'
+                WHEN c ILIKE '%Атырау%' THEN 'Атырауская обл.'
+                WHEN c ILIKE '%Восточно-Казахстан%' OR c ILIKE '%Усть-Каменогорск%' OR c ILIKE '%ВКО%' THEN 'Восточно-Казахстанская обл.'
+                WHEN c ILIKE '%Жамбылск%' OR c ILIKE '%Тараз%' THEN 'Жамбылская обл.'
+                WHEN c ILIKE '%Западно-Казахстан%' OR c ILIKE '%Уральск%' OR c ILIKE '%ЗКО%' THEN 'Западно-Казахстанская обл.'
+                WHEN c ILIKE '%Костанай%' OR c ILIKE '%Кустанай%' THEN 'Костанайская обл.'
+                WHEN c ILIKE '%Кызылорд%' OR c ILIKE '%Қызылорд%' THEN 'Кызылординская обл.'
+                WHEN c ILIKE '%Мангистау%' OR c ILIKE '%Мангыстау%' OR c ILIKE '%Актау%' THEN 'Мангистауская обл.'
+                WHEN c ILIKE '%Павлодар%' THEN 'Павлодарская обл.'
+                WHEN c ILIKE '%Северо-Казахстан%' OR c ILIKE '%Петропавловск%' OR c ILIKE '%СКО%' THEN 'Северо-Казахстанская обл.'
+                WHEN c ILIKE '%Туркестан%' OR c ILIKE '%Түркістан%' THEN 'Туркестанская обл.'
+                WHEN c ILIKE '%Акмолинск%' OR c ILIKE '%Кокшетау%' THEN 'Акмолинская обл.'
+                WHEN c ILIKE '%Абайск%' OR c ILIKE '%Семей%' THEN 'Абайская обл.'
+                WHEN c ILIKE '%Жетісу%' OR c ILIKE '%Жетысу%' OR c ILIKE '%Талдыкорган%' THEN 'Жетысуская обл.'
+                WHEN c ILIKE '%Улытау%' OR c ILIKE '%Ұлытау%' OR c ILIKE '%Жезказган%' THEN 'Улытауская обл.'
+                ELSE 'Другой регион'
+              END
+            $fn$ LANGUAGE sql IMMUTABLE;
         """)
         await con.execute("DELETE FROM sessions WHERE expires_at < now()")  # чистим протухшие
         if OWNER_EMAIL and ADMIN_PASSWORD:
@@ -407,6 +433,7 @@ async def list_lots(
     q: str | None = None,
     status: str | None = None,
     category: str | None = None,
+    region: str | None = None,
     sort: str = "confidence",
     max_spend: float | None = Query(None, ge=0),
     min_margin: float | None = Query(None, ge=0),
@@ -435,6 +462,9 @@ async def list_lots(
     if category:
         args.append(category)
         where.append(f"l.category = ${len(args)}")
+    if region:
+        args.append(region)
+        where.append(f"tf_region(l.customer) = ${len(args)}")
 
     # умный подбор по деньгам — только для подписчиков (цена/маржа скрыты у бесплатных)
     if entitled and max_spend is not None:
@@ -455,7 +485,7 @@ async def list_lots(
         total = await con.fetchval(
             f"SELECT count(*) FROM lots l LEFT JOIN tenders t ON t.id = l.row_id {where_sql}", *args)
         rows = await con.fetch(
-            f"SELECT {COLS_L}, t.deadline FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
+            f"SELECT {COLS_L}, t.deadline, tf_region(l.customer) AS region FROM lots l LEFT JOIN tenders t ON t.id = l.row_id "
             f"{where_sql} ORDER BY {order_sql} "
             f"LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
             *args, limit, offset,
@@ -496,6 +526,19 @@ async def get_lot(row_id: int, response: Response, user=Depends(current_user)):
         d["locked"] = True
     response.headers["Cache-Control"] = "private, no-store"
     return d
+
+
+@app.get("/api/regions")
+async def regions(response: Response):
+    """Регионы, представленные на витрине (с числом тендеров), для фильтра."""
+    pool = app.state.pool
+    async with pool.acquire() as con:
+        rows = await con.fetch(
+            "SELECT tf_region(customer) AS region, count(*) AS c "
+            "FROM lots GROUP BY region ORDER BY c DESC"
+        )
+    _cache(response)
+    return {"regions": [{"region": r["region"], "count": r["c"]} for r in rows]}
 
 
 @app.get("/api/stats")

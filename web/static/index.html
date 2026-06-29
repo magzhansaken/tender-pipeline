@@ -176,6 +176,7 @@
   .fav-btn.on{color:#e0a516;border-color:rgba(224,165,22,.5);background:rgba(224,165,22,.12)}
   .fav-btn:disabled{opacity:.5;cursor:default}
   .fav-link{color:var(--accent)!important;font-weight:600}
+  .loc{font-size:12px;color:var(--muted);margin:4px 0 0;display:flex;align-items:center;gap:4px}
   /* Уведомления о сроках (4.4) */
   .fav-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;
     margin-left:4px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;vertical-align:middle}
@@ -295,6 +296,7 @@
       <button class="pill" data-status="NOT_FOUND" aria-pressed="false">Не найдено</button>
     </div>
     <select id="category"><option value="">Все категории</option></select>
+    <select id="region"><option value="">Все регионы</option></select>
     <select id="sort">
       <option value="confidence">По уверенности</option>
       <option value="recent">Сначала новые</option>
@@ -356,7 +358,7 @@ const ST = {
   NO_BRAND_NEEDED:{label:"Без бренда",        cls:"neutral"},
   ERROR:          {label:"Ошибка",            cls:"bad"},
 };
-const state = {q:"", status:"", category:"", sort:"confidence", maxSpend:"", minMargin:"", offset:0, limit:25};
+const state = {q:"", status:"", category:"", region:"", sort:"confidence", maxSpend:"", minMargin:"", offset:0, limit:25};
 const $ = s => document.querySelector(s);
 const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -378,6 +380,19 @@ async function loadStats(){
       const o = document.createElement("option"); o.value = c; o.textContent = c; sel.append(o);
     }
   }catch(e){ /* статистика не критична */ }
+}
+
+async function loadRegions(){
+  try{
+    const d = await (await fetch("/api/regions")).json();
+    const sel = $("#region");
+    for(const r of (d.regions||[])){
+      if(!r.region || r.region==="Не указан") continue;
+      const o = document.createElement("option");
+      o.value = r.region; o.textContent = `${r.region} (${r.count})`;
+      sel.append(o);
+    }
+  }catch(e){ /* регионы не критичны */ }
 }
 
 function specChips(arr, cls){
@@ -578,6 +593,7 @@ function card(it){
         <div>
           <p class="eyebrow">${esc(it.category||"без категории")}</p>
           <h2 class="name">${esc(it.name||"—")}</h2>
+          ${(it.region && it.region!=="Не указан" && it.region!=="Другой регион") ? `<p class="loc">📍 ${esc(it.region)}</p>` : ""}
         </div>
         <div class="top-right">
           ${ACCESS.entitled ? `<button class="fav-btn${FAVS.has(it.row_id)?' on':''}" data-fav="${it.row_id}" title="${FAVS.has(it.row_id)?'В избранном':'В избранное'}" aria-label="В избранное">${FAVS.has(it.row_id)?STAR_FILL:STAR_LINE}</button>` : ""}
@@ -685,6 +701,7 @@ async function load(){
   if(state.q) p.set("q", state.q);
   if(state.status) p.set("status", state.status);
   if(state.category) p.set("category", state.category);
+  if(state.region) p.set("region", state.region);
   if(state.maxSpend) p.set("max_spend", state.maxSpend);
   if(state.minMargin) p.set("min_margin", state.minMargin);
   p.set("sort", state.sort);
@@ -732,6 +749,7 @@ $("#statusPills").addEventListener("click", e => {
   state.status = b.dataset.status; state.offset = 0; load();
 });
 $("#category").addEventListener("change", e => { state.category = e.target.value; state.offset = 0; load(); });
+$("#region").addEventListener("change", e => { state.region = e.target.value; state.offset = 0; load(); });
 $("#sort").addEventListener("change", e => { state.sort = e.target.value; state.offset = 0; load(); });
 
 let moneyT;
@@ -785,6 +803,7 @@ $("#prev").addEventListener("click", () => { state.offset = Math.max(0, state.of
 $("#next").addEventListener("click", () => { state.offset += state.limit; load(); window.scrollTo(0,0); });
 
 loadStats();
+loadRegions();
 initCosts();
 load();
 
