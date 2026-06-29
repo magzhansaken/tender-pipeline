@@ -4,5 +4,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       OWNER_EMAIL: ${OWNER_EMAIL:-}
       SESSION_DAYS: ${SESSION_DAYS:-30}
+      CERT_API_URL: ${CERT_API_URL:-}
+      CERT_API_KEY: ${CERT_API_KEY:-}
     volumes:
       - /opt/tenderview:/hostlogs:ro
