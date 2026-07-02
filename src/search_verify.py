@@ -54,6 +54,21 @@ DDGS_PAUSE = float(os.getenv("DDGS_PAUSE", "0.4"))
 DDGS_MAX_RESULTS = int(os.getenv("DDGS_MAX_RESULTS", "3"))
 MAX_CANDIDATES = int(os.getenv("MAX_CANDIDATES", "8"))
 
+# ── Улучшенный верификатор (Вариант Б + пер-категорийная строгость из карточек) ──
+# VERIFY_MODE=off (по умолчанию) — старый VERIFY_PROMPT 1:1.
+# VERIFY_MODE=on — строгость по карточке товара, FOUND_PARTIAL вместо ложного NOT_FOUND.
+# Если модуль/pymorphy3 не поднимется — тихий откат на старый промпт.
+VERIFY_MODE = os.getenv("VERIFY_MODE", "off").lower()
+_build_verify = None
+if VERIFY_MODE == "on":
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from matching.prompt_build import build_verify_for_tender as _build_verify
+        print("🧩 VERIFY_MODE=on — верификатор Вариант Б (карточки)")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ VERIFY_MODE=on, но модуль matching не загрузился ({e}). Откат на старый верификатор.")
+        _build_verify = None
+
 VERIFY_PROMPT = (
     "Ты — система верификации товаров для госзакупок Казахстана.\n"
     "Тебе дают ТРЕБОВАНИЯ из ТЗ и список КАНДИДАТОВ с маркетплейсов. "
@@ -179,7 +194,7 @@ def rank_candidates(candidates, queries):
     return sorted(candidates, key=score, reverse=True)
 
 
-def verify(client, anketa, candidates):
+def verify(client, anketa, candidates, lot_name=""):
     """Сверка кандидатов с анкетой через Ollama -> вердикт (dict)."""
     cand_text = ""
     for i, c in enumerate(candidates[:MAX_CANDIDATES], 1):
@@ -207,10 +222,16 @@ def verify(client, anketa, candidates):
         "Сравни кандидатов с требованиями ТЗ. Помни про пороги (>= не менее, <= не более, == точно). ТОЛЬКО JSON."
     )
 
+    system = VERIFY_PROMPT
+    if _build_verify is not None:
+        try:
+            system = _build_verify(lot_name, "")["system"]
+        except Exception:
+            system = VERIFY_PROMPT
     resp = client.chat(
         model=OLLAMA_MODEL,
         messages=[
-            {"role": "system", "content": VERIFY_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
         stream=False,
@@ -296,7 +317,7 @@ async def main():
             result = {"status": "NOT_FOUND", "reason": "поиск не дал кандидатов", "confidence": 0}
         else:
             try:
-                result = await asyncio.to_thread(verify, client, anketa, candidates)
+                result = await asyncio.to_thread(verify, client, anketa, candidates, r["name"])
             except Exception as e:
                 err += 1
                 await conn.execute("UPDATE tenders SET match_status='search_error', stage='search_error' WHERE id=$1", r["id"])

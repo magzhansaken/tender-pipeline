@@ -14,4 +14,4 @@ echo "===== $(date) старт поиска: $NEED ждут =====" >> "$LOG"
 docker run -d --name search_worker --network tenderview_default \
   -v "$REPO":/app -w /app --env-file /opt/tenderview/.env \
   -e DATABASE_URL=postgresql://tender:$PG@db:5432/tender -e PYTHONUNBUFFERED=1 \
-  python:3.12-slim bash -c "pip install -q ddgs ollama asyncpg && python src/search_verify.py" >> "$LOG" 2>&1
+  python:3.12-slim bash -c "pip install -q ddgs ollama asyncpg pymorphy3 && python src/search_verify.py" >> "$LOG" 2>&1

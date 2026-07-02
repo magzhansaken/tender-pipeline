@@ -36,6 +36,7 @@ FILTER = ("filter%5Bmethod%5D%5B0%5D=3&filter%5Bstatus%5D%5B0%5D=240"
 MAX_PAGES = int(os.getenv("MAX_PAGES", "300"))
 MIN_SAFE = int(os.getenv("MIN_SAFE", "3000"))
 MAX_NEW = int(os.getenv("MAX_NEW", "400"))
+SYNC_MIN_RATIO = float(os.getenv("SYNC_MIN_RATIO", "0.98"))  # принять частичную выдачу от этой доли
 DRY_RUN = "--dry-run" in sys.argv
 
 
@@ -177,13 +178,17 @@ async def main():
         page += 1
         await asyncio.sleep(0.4)
 
-    print("\nАктивных на goszakup: %d (полностью: %s)" % (len(active), "да" if completed else "НЕТ"))
+    ratio = (len(active) / total) if total else 1.0
+    acceptable = (len(active) >= MIN_SAFE) and (total is None or ratio >= SYNC_MIN_RATIO)
+    print("\nАктивных на goszakup: %d из %s (%.1f%%) | полностью: %s"
+          % (len(active), total or "?", ratio * 100, "да" if completed else "НЕТ"))
+    if not completed and not acceptable:
+        print("\u26a0\ufe0f Выдача неполна (< %.0f%% от %s или < %d) — база НЕ изменена (защита)."
+              % (SYNC_MIN_RATIO * 100, total or "?", MIN_SAFE))
+        return
     if not completed:
-        print("\u26a0\ufe0f Выдача скачана не полностью — база НЕ изменена (защита).")
-        return
-    if len(active) < MIN_SAFE:
-        print("\u26a0\ufe0f Активных всего %d (< %d) — база НЕ изменена (защита)." % (len(active), MIN_SAFE))
-        return
+        print("\u2139\ufe0f Принимаю ЧАСТИЧНУЮ выдачу (%d из %s, %.1f%%) — недостающие "
+              "добберутся следующим автосбором." % (len(active), total or "?", ratio * 100))
 
     conn = await asyncpg.connect(DATABASE_URL)
     existing = set(r["lot_number"] for r in await conn.fetch("SELECT lot_number FROM tenders"))
@@ -201,8 +206,11 @@ async def main():
     # ── 2) синхронизация статусов (по присутствию) ──
     nums = list(active_nums)
     o = await conn.execute("UPDATE tenders SET is_closed=false WHERE is_closed=true AND lot_number = ANY($1::text[])", nums)
-    c = await conn.execute("UPDATE tenders SET is_closed=true WHERE is_closed=false AND NOT (lot_number = ANY($1::text[]))", nums)
-    print("Статусы: открыто %s, закрыто %s" % (o.split()[-1], c.split()[-1]))
+    if completed:
+        c = await conn.execute("UPDATE tenders SET is_closed=true WHERE is_closed=false AND NOT (lot_number = ANY($1::text[]))", nums)
+        print("Статусы: открыто %s, закрыто %s" % (o.split()[-1], c.split()[-1]))
+    else:
+        print("Статусы: открыто %s | закрытие пропавших ПРОПУЩЕНО (частичный прогон — чтобы не закрыть недобранные)" % o.split()[-1])
 
     # ── 3) собрать НОВЫЕ лоты (ТЗ) и вставить ──
     added = 0
