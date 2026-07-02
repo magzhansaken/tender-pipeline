@@ -209,7 +209,7 @@ async def main():
             r["id"],
             r["name"],
             r["match_status"],
-            spec.get("product_type"),
+            spec.get("category") or spec.get("product_type"),   # настоящая категория (fallback на тип)
             spec.get("brand"),
             spec.get("model"),
             mr.get("brand"),

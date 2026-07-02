@@ -16,4 +16,4 @@ echo "===== $(date) старт: $NEED необработанных =====" >> "$L
 docker run -d --name ollama_worker --network tenderview_default \
   -v "$REPO":/app -w /app --env-file /opt/tenderview/.env \
   -e DATABASE_URL=postgresql://tender:$PG@db:5432/tender -e PYTHONUNBUFFERED=1 \
-  python:3.12-slim bash -c "pip install -q ollama asyncpg && python src/process_specs.py" >> "$LOG" 2>&1
+  python:3.12-slim bash -c "pip install -q ollama asyncpg pymorphy3 && python src/process_specs.py" >> "$LOG" 2>&1

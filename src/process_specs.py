@@ -33,6 +33,21 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tender:tender@db:5432/ten
 LIMIT = int(os.getenv("LIMIT", "0"))
 DELAY = float(os.getenv("DELAY", "0.5"))
 
+# ── Движок матчинга (карточки топ-1000 + универсальный промпт) ────────────────
+# MATCHING_MODE=off (по умолчанию) — поведение 1:1 как раньше (общий SYSTEM_PROMPT).
+# MATCHING_MODE=on — маршрутизация по имени лота на карточный/универсальный промпт.
+# Если модуль/pymorphy3 не загрузится — тихий откат на общий промпт (воркер не падает).
+MATCHING_MODE = os.getenv("MATCHING_MODE", "off").lower()
+_build_for_tender = None
+if MATCHING_MODE == "on":
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from matching.prompt_build import build_for_tender as _build_for_tender
+        print("🧩 MATCHING_MODE=on — используется движок карточек + универсальный промпт")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ MATCHING_MODE=on, но модуль matching не загрузился ({e}). Откат на общий промпт.")
+        _build_for_tender = None
+
 SYSTEM_PROMPT = (
     "Ты — система нормализации технических заданий (ТЗ) госзакупок Казахстана.\n"
     "На входе сырой текст ТЗ одного лота. Верни СТРОГО JSON по схеме ниже — "
@@ -76,13 +91,26 @@ def extract_json(raw: str) -> dict:
     return json.loads(raw[start:end])
 
 
-def normalize(client: Client, raw_spec: str) -> dict:
-    """Один вызов модели -> разобранная анкета (с проверкой выдуманного бренда)."""
+def normalize(client: Client, raw_spec: str, lot_name: str = "") -> dict:
+    """Один вызов модели -> разобранная анкета (с проверкой выдуманного бренда).
+
+    При MATCHING_MODE=on системный промпт собирается движком матчинга по имени лота
+    (карточка топ-1000 или универсальный со шпаргалкой). Схема ответа НЕ меняется.
+    """
+    if _build_for_tender is not None:
+        b = _build_for_tender(lot_name, raw_spec)
+        system, cat_hint = b["system"], b["category_hint"]
+    else:
+        system, cat_hint = SYSTEM_PROMPT, None
+
+    user = (f"Имя лота: {lot_name}\n" if lot_name else "") + \
+           f"Текст ТЗ:\n{raw_spec[:6000]}\n\nВерни JSON по схеме."
+
     resp = client.chat(
         model=OLLAMA_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Текст ТЗ:\n{raw_spec[:6000]}\n\nВерни JSON по схеме."},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
         stream=False,
         think=False,
@@ -95,6 +123,10 @@ def normalize(client: Client, raw_spec: str) -> dict:
         data["_brand_warning"] = f"бренд '{brand}' выдуман моделью — в ТЗ его нет"
         data["brand"] = None
         data["brand_required"] = False
+
+    # Каноническая категория для карточных типов (для хвоста берётся из ответа модели)
+    if cat_hint:
+        data["category"] = cat_hint
 
     return data
 
@@ -135,7 +167,7 @@ async def main():
         # до 3 попыток (на случай лимитов/сетевых сбоев)
         for attempt in range(3):
             try:
-                data = await asyncio.to_thread(normalize, client, r["raw_spec"])
+                data = await asyncio.to_thread(normalize, client, r["raw_spec"], r["name"])
                 break
             except Exception as e:
                 last_err = e
