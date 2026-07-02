@@ -29,10 +29,9 @@ process_specs.py / search_verify.py / publish.py:
 import os
 import json
 
-try:
-    from .router import CardRouter
-except ImportError:
-    from router import CardRouter
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # папка matching всегда на пути
+from router import CardRouter
 
 
 # ─────────────────────────────────────────────────────────────────────────────

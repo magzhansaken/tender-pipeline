@@ -66,6 +66,7 @@ if VERIFY_MODE == "on":
         from matching.prompt_build import build_verify_for_tender as _build_verify
         print("🧩 VERIFY_MODE=on — верификатор Вариант Б (карточки)")
     except Exception as e:  # noqa: BLE001
+        import traceback; traceback.print_exc()
         print(f"⚠️ VERIFY_MODE=on, но модуль matching не загрузился ({e}). Откат на старый верификатор.")
         _build_verify = None
 

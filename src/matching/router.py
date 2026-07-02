@@ -1,11 +1,9 @@
 """Производственный роутер: lot_name -> карточка. Использует TypeExtractor + маппинг
 типа на карточку. Возвращает (card|None, product_type). None => универсальный промпт."""
-import os, csv, json, re
+import os, sys, csv, json, re
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # папка matching всегда на пути
 def _re_sub(s): return re.sub(r'\(.*?\)','',s)
-try:
-    from .extractor import TypeExtractor, toks       # как пакет (matching.router)
-except ImportError:
-    from extractor import TypeExtractor, toks          # напрямую
+from extractor import TypeExtractor, toks
 
 class CardRouter:
     _DATA=os.path.join(os.path.dirname(__file__),'data')

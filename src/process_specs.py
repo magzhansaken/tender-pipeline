@@ -45,6 +45,7 @@ if MATCHING_MODE == "on":
         from matching.prompt_build import build_for_tender as _build_for_tender
         print("🧩 MATCHING_MODE=on — используется движок карточек + универсальный промпт")
     except Exception as e:  # noqa: BLE001
+        import traceback; traceback.print_exc()
         print(f"⚠️ MATCHING_MODE=on, но модуль matching не загрузился ({e}). Откат на общий промпт.")
         _build_for_tender = None
 
